@@ -11,7 +11,11 @@ const AMBIENT_STAR_COUNT = 175;
 const HOVER_RADIUS = 120;
 const REVEAL_OPACITY = 0.9;
 const LINE_WIDTH = 1.8;
-const FADE_DURATION_MS = 350;
+// Each edge's own fade is fast/snappy...
+const EDGE_FADE_MS = 140;
+// ...but each successive BFS ring starts this many ms after the previous one,
+// so the reveal visibly ripples outward from the star nearest the cursor.
+const RING_STAGGER_MS = 70;
 
 // Tune the ambient population here (kept within a 5-7 range per design).
 const ACTIVE_CONSTELLATION_COUNT = 6;
@@ -24,11 +28,14 @@ const EDGE_ANGLE_JITTER = Math.PI / 4;
 // so it isn't instantly re-flagged as fully offscreen before it can drift in.
 const SPAWN_MARGIN = 6;
 
-interface ConstellationFade {
+interface EdgeFade {
   current: number;
   target: number;
   fromValue: number;
-  startTime: number;
+  // When this edge's own tween is allowed to begin (absolute rAF timestamp).
+  scheduledStart: number;
+  // When the tween actually started; null until `now >= scheduledStart`.
+  tweenStart: number | null;
 }
 
 interface Bounds {
@@ -44,7 +51,11 @@ interface ConstellationInstance {
   centerY: number;
   vx: number;
   vy: number;
-  fade: ConstellationFade;
+  edgeFades: EdgeFade[];
+  wasHovered: boolean;
+  // BFS distances from the last reveal's origin star, reused when reversing
+  // the cascade so it unwinds back through the same origin.
+  lastDist: number[] | null;
 }
 
 function easeInOutCubic(t: number): number {
@@ -55,8 +66,8 @@ function randomRange(min: number, max: number): number {
   return min + Math.random() * (max - min);
 }
 
-function createFade(): ConstellationFade {
-  return { current: 0, target: 0, fromValue: 0, startTime: 0 };
+function createEdgeFade(): EdgeFade {
+  return { current: 0, target: 0, fromValue: 0, scheduledStart: 0, tweenStart: null };
 }
 
 function getBounds(constellation: Constellation): Bounds {
@@ -77,6 +88,52 @@ function getBounds(constellation: Constellation): Bounds {
 
 const CONSTELLATION_BOUNDS: Bounds[] = constellations.map(getBounds);
 
+function buildAdjacency(constellation: Constellation): number[][] {
+  const adjacency: number[][] = constellation.stars.map(() => []);
+  for (const [a, b] of constellation.edges) {
+    adjacency[a].push(b);
+    adjacency[b].push(a);
+  }
+  return adjacency;
+}
+
+const CONSTELLATION_ADJACENCY: number[][][] = constellations.map(buildAdjacency);
+
+function bfsDistances(adjacency: number[][], origin: number): number[] {
+  const dist = new Array(adjacency.length).fill(Infinity);
+  dist[origin] = 0;
+  const queue = [origin];
+
+  for (let head = 0; head < queue.length; head++) {
+    const current = queue[head];
+    for (const neighbor of adjacency[current]) {
+      if (dist[neighbor] === Infinity) {
+        dist[neighbor] = dist[current] + 1;
+        queue.push(neighbor);
+      }
+    }
+  }
+
+  return dist;
+}
+
+function nearestStarIndex(points: { x: number; y: number }[], mouse: { x: number; y: number }): number {
+  let bestIndex = 0;
+  let bestDist = Infinity;
+
+  points.forEach((point, index) => {
+    const dx = point.x - mouse.x;
+    const dy = point.y - mouse.y;
+    const d = dx * dx + dy * dy;
+    if (d < bestDist) {
+      bestDist = d;
+      bestIndex = index;
+    }
+  });
+
+  return bestIndex;
+}
+
 function pickPoolIndex(excludeIndex: number | null): number {
   if (constellations.length <= 1) return 0;
   let index = Math.floor(Math.random() * constellations.length);
@@ -84,6 +141,25 @@ function pickPoolIndex(excludeIndex: number | null): number {
     index = Math.floor(Math.random() * constellations.length);
   }
   return index;
+}
+
+function createInstance(
+  poolIndex: number,
+  centerX: number,
+  centerY: number,
+  vx: number,
+  vy: number,
+): ConstellationInstance {
+  return {
+    poolIndex,
+    centerX,
+    centerY,
+    vx,
+    vy,
+    edgeFades: constellations[poolIndex].edges.map(() => createEdgeFade()),
+    wasHovered: false,
+    lastDist: null,
+  };
 }
 
 function spawnRandomInView(width: number, height: number): ConstellationInstance {
@@ -101,14 +177,7 @@ function spawnRandomInView(width: number, height: number): ConstellationInstance
   const angle = randomRange(0, Math.PI * 2);
   const speed = randomRange(DRIFT_SPEED_MIN, DRIFT_SPEED_MAX);
 
-  return {
-    poolIndex,
-    centerX,
-    centerY,
-    vx: Math.cos(angle) * speed,
-    vy: Math.sin(angle) * speed,
-    fade: createFade(),
-  };
+  return createInstance(poolIndex, centerX, centerY, Math.cos(angle) * speed, Math.sin(angle) * speed);
 }
 
 function spawnFromEdge(excludeIndex: number, width: number, height: number): ConstellationInstance {
@@ -150,14 +219,7 @@ function spawnFromEdge(excludeIndex: number, width: number, height: number): Con
   const angle = baseAngle + randomRange(-EDGE_ANGLE_JITTER, EDGE_ANGLE_JITTER);
   const speed = randomRange(DRIFT_SPEED_MIN, DRIFT_SPEED_MAX);
 
-  return {
-    poolIndex,
-    centerX,
-    centerY,
-    vx: Math.cos(angle) * speed,
-    vy: Math.sin(angle) * speed,
-    fade: createFade(),
-  };
+  return createInstance(poolIndex, centerX, centerY, Math.cos(angle) * speed, Math.sin(angle) * speed);
 }
 
 function isFullyOffscreen(instance: ConstellationInstance, width: number, height: number): boolean {
@@ -320,30 +382,63 @@ export function ConstellationField() {
             return dx * dx + dy * dy <= HOVER_RADIUS * HOVER_RADIUS;
           });
 
-        const fade = instance.fade;
-        const nextTarget = isHovered ? REVEAL_OPACITY : 0;
-        if (fade.target !== nextTarget) {
-          fade.fromValue = fade.current;
-          fade.target = nextTarget;
-          fade.startTime = now;
+        // On a hover-state transition, (re)schedule every edge's fade with a
+        // BFS-ring-based delay so the reveal ripples outward from the star
+        // nearest the cursor (or unwinds back into it on fade-out).
+        if (isHovered !== instance.wasHovered) {
+          let dist = instance.lastDist;
+
+          if (isHovered || dist === null) {
+            const origin = mouse !== null ? nearestStarIndex(points, mouse) : 0;
+            dist = bfsDistances(CONSTELLATION_ADJACENCY[instance.poolIndex], origin);
+            instance.lastDist = dist;
+          }
+
+          const edgeRings = constellation.edges.map(([a, b]) => {
+            const ring = Math.min(dist![a], dist![b]);
+            return Number.isFinite(ring) ? ring : 0;
+          });
+          const maxRing = edgeRings.length > 0 ? Math.max(...edgeRings) : 0;
+          const target = isHovered ? REVEAL_OPACITY : 0;
+
+          instance.edgeFades.forEach((fade, index) => {
+            const ring = edgeRings[index];
+            const delay = (isHovered ? ring : maxRing - ring) * RING_STAGGER_MS;
+            fade.scheduledStart = now + delay;
+            fade.tweenStart = null;
+            fade.target = target;
+          });
+
+          instance.wasHovered = isHovered;
         }
 
-        const progress = Math.min((now - fade.startTime) / FADE_DURATION_MS, 1);
-        fade.current = fade.fromValue + (fade.target - fade.fromValue) * easeInOutCubic(progress);
-
-        if (fade.current > 0.001) {
-          ctx.strokeStyle = `rgba(168, 133, 247, ${fade.current})`;
+        if (instance.edgeFades.length > 0) {
           ctx.lineWidth = LINE_WIDTH;
-          for (const [a, b] of constellation.edges) {
-            const pointA = points[a];
-            const pointB = points[b];
-            if (!pointA || !pointB) continue;
 
-            ctx.beginPath();
-            ctx.moveTo(pointA.x, pointA.y);
-            ctx.lineTo(pointB.x, pointB.y);
-            ctx.stroke();
-          }
+          constellation.edges.forEach(([a, b], index) => {
+            const fade = instance.edgeFades[index];
+
+            if (now >= fade.scheduledStart) {
+              if (fade.tweenStart === null) {
+                fade.tweenStart = now;
+                fade.fromValue = fade.current;
+              }
+              const progress = Math.min((now - fade.tweenStart) / EDGE_FADE_MS, 1);
+              fade.current = fade.fromValue + (fade.target - fade.fromValue) * easeInOutCubic(progress);
+            }
+
+            if (fade.current > 0.001) {
+              const pointA = points[a];
+              const pointB = points[b];
+              if (!pointA || !pointB) return;
+
+              ctx.strokeStyle = `rgba(168, 133, 247, ${fade.current})`;
+              ctx.beginPath();
+              ctx.moveTo(pointA.x, pointA.y);
+              ctx.lineTo(pointB.x, pointB.y);
+              ctx.stroke();
+            }
+          });
         }
 
         for (const point of points) {
