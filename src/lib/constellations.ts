@@ -19,13 +19,13 @@ export const constellations: Constellation[] = [
   {
     name: "Orion",
     stars: [
-      { x: -35, y: -45 },
-      { x: 30, y: -50 },
-      { x: 5, y: -8 },
-      { x: -8, y: 0 },
-      { x: -18, y: 8 },
-      { x: -28, y: 52 },
-      { x: 22, y: 45 },
+      { x: -51, y: -65 },
+      { x: 44, y: -72 },
+      { x: 7, y: -12 },
+      { x: -12, y: 0 },
+      { x: -26, y: 12 },
+      { x: -41, y: 75 },
+      { x: 32, y: 65 },
     ],
     edges: [
       [0, 2],
@@ -39,13 +39,13 @@ export const constellations: Constellation[] = [
   {
     name: "Ursa Major",
     stars: [
-      { x: -55, y: -40 },
-      { x: -58, y: 5 },
-      { x: -15, y: 12 },
-      { x: -8, y: -30 },
-      { x: 20, y: -45 },
-      { x: 50, y: -58 },
-      { x: 70, y: -70 },
+      { x: -80, y: -58 },
+      { x: -84, y: 7 },
+      { x: -22, y: 17 },
+      { x: -12, y: -43 },
+      { x: 29, y: -65 },
+      { x: 73, y: -84 },
+      { x: 102, y: -101 },
     ],
     edges: [
       [0, 3],
@@ -60,11 +60,11 @@ export const constellations: Constellation[] = [
   {
     name: "Cassiopeia",
     stars: [
-      { x: -50, y: 10 },
-      { x: -25, y: -45 },
-      { x: 0, y: 15 },
-      { x: 25, y: -48 },
-      { x: 50, y: 5 },
+      { x: -72, y: 15 },
+      { x: -36, y: -65 },
+      { x: 0, y: 22 },
+      { x: 36, y: -70 },
+      { x: 73, y: 7 },
     ],
     edges: [
       [0, 1],
@@ -76,11 +76,11 @@ export const constellations: Constellation[] = [
   {
     name: "Cygnus",
     stars: [
-      { x: 0, y: -45 },
+      { x: 0, y: -65 },
       { x: 0, y: 0 },
-      { x: 0, y: 45 },
-      { x: -38, y: -7 },
-      { x: 40, y: 10 },
+      { x: 0, y: 65 },
+      { x: -55, y: -10 },
+      { x: 58, y: 15 },
     ],
     edges: [
       [0, 1],
@@ -92,11 +92,11 @@ export const constellations: Constellation[] = [
   {
     name: "Lyra",
     stars: [
-      { x: 0, y: -35 },
-      { x: -22, y: -5 },
-      { x: -16, y: 25 },
-      { x: 18, y: 30 },
-      { x: 24, y: -3 },
+      { x: 0, y: -51 },
+      { x: -32, y: -7 },
+      { x: -23, y: 36 },
+      { x: 26, y: 44 },
+      { x: 35, y: -4 },
     ],
     edges: [
       [0, 1],
@@ -109,13 +109,13 @@ export const constellations: Constellation[] = [
   {
     name: "Ursa Minor",
     stars: [
-      { x: 45, y: -50 },
-      { x: 15, y: -30 },
-      { x: -8, y: -10 },
-      { x: -42, y: 10 },
-      { x: -48, y: 42 },
-      { x: -18, y: 50 },
-      { x: -2, y: 5 },
+      { x: 65, y: -72 },
+      { x: 22, y: -43 },
+      { x: -12, y: -14 },
+      { x: -61, y: 15 },
+      { x: -70, y: 61 },
+      { x: -26, y: 73 },
+      { x: -3, y: 7 },
     ],
     edges: [
       [0, 1],
@@ -129,13 +129,13 @@ export const constellations: Constellation[] = [
   {
     name: "Scorpius",
     stars: [
-      { x: -50, y: -45 },
-      { x: -28, y: -25 },
-      { x: -5, y: 0 },
-      { x: 18, y: 25 },
-      { x: 32, y: 50 },
-      { x: 18, y: 72 },
-      { x: -2, y: 65 },
+      { x: -72, y: -65 },
+      { x: -41, y: -36 },
+      { x: -7, y: 0 },
+      { x: 26, y: 36 },
+      { x: 46, y: 73 },
+      { x: 26, y: 104 },
+      { x: -3, y: 94 },
     ],
     edges: [
       [0, 1],
@@ -149,12 +149,12 @@ export const constellations: Constellation[] = [
   {
     name: "Leo",
     stars: [
-      { x: -45, y: -30 },
-      { x: -55, y: 0 },
-      { x: -45, y: 25 },
-      { x: -5, y: 10 },
-      { x: 35, y: -15 },
-      { x: 65, y: -40 },
+      { x: -65, y: -43 },
+      { x: -80, y: 0 },
+      { x: -65, y: 36 },
+      { x: -7, y: 15 },
+      { x: 51, y: -22 },
+      { x: 94, y: -58 },
     ],
     edges: [
       [0, 1],
@@ -167,12 +167,12 @@ export const constellations: Constellation[] = [
   {
     name: "Gemini",
     stars: [
-      { x: -15, y: -45 },
-      { x: 18, y: -50 },
-      { x: -20, y: 5 },
-      { x: 22, y: 0 },
-      { x: -25, y: 45 },
-      { x: 28, y: 50 },
+      { x: -22, y: -65 },
+      { x: 26, y: -72 },
+      { x: -29, y: 7 },
+      { x: 32, y: 0 },
+      { x: -36, y: 65 },
+      { x: 41, y: 73 },
     ],
     edges: [
       [0, 2],
@@ -185,11 +185,11 @@ export const constellations: Constellation[] = [
   {
     name: "Aquila",
     stars: [
-      { x: 0, y: -42 },
-      { x: 0, y: 3 },
-      { x: 0, y: 48 },
-      { x: -40, y: -2 },
-      { x: 42, y: 8 },
+      { x: 0, y: -61 },
+      { x: 0, y: 4 },
+      { x: 0, y: 70 },
+      { x: -58, y: -3 },
+      { x: 61, y: 12 },
     ],
     edges: [
       [0, 1],
@@ -201,12 +201,12 @@ export const constellations: Constellation[] = [
   {
     name: "Perseus",
     stars: [
-      { x: -45, y: -15 },
-      { x: -15, y: -42 },
-      { x: 10, y: -8 },
-      { x: 35, y: -22 },
-      { x: 48, y: 15 },
-      { x: 5, y: 35 },
+      { x: -65, y: -22 },
+      { x: -22, y: -61 },
+      { x: 15, y: -12 },
+      { x: 51, y: -32 },
+      { x: 70, y: 22 },
+      { x: 7, y: 51 },
     ],
     edges: [
       [0, 1],
@@ -219,11 +219,11 @@ export const constellations: Constellation[] = [
   {
     name: "Andromeda",
     stars: [
-      { x: -48, y: 5 },
-      { x: -15, y: -12 },
-      { x: 12, y: 3 },
-      { x: 35, y: -15 },
-      { x: 48, y: 10 },
+      { x: -70, y: 7 },
+      { x: -22, y: -17 },
+      { x: 17, y: 4 },
+      { x: 51, y: -22 },
+      { x: 70, y: 15 },
     ],
     edges: [
       [0, 1],
@@ -235,11 +235,11 @@ export const constellations: Constellation[] = [
   {
     name: "Pegasus",
     stars: [
-      { x: -45, y: -40 },
-      { x: 45, y: -45 },
-      { x: 50, y: 42 },
-      { x: -48, y: 48 },
-      { x: -55, y: -8 },
+      { x: -65, y: -58 },
+      { x: 65, y: -65 },
+      { x: 73, y: 61 },
+      { x: -70, y: 70 },
+      { x: -80, y: -12 },
     ],
     edges: [
       [0, 1],
@@ -252,13 +252,13 @@ export const constellations: Constellation[] = [
   {
     name: "Sagittarius",
     stars: [
-      { x: 0, y: -50 },
-      { x: -30, y: -25 },
-      { x: -50, y: 5 },
-      { x: -20, y: 10 },
-      { x: 20, y: 10 },
-      { x: 40, y: -20 },
-      { x: 0, y: 35 },
+      { x: 0, y: -72 },
+      { x: -43, y: -36 },
+      { x: -72, y: 7 },
+      { x: -29, y: 15 },
+      { x: 29, y: 15 },
+      { x: 58, y: -29 },
+      { x: 0, y: 51 },
     ],
     edges: [
       [0, 1],
@@ -274,10 +274,10 @@ export const constellations: Constellation[] = [
   {
     name: "Triangulum",
     stars: [
-      { x: 0, y: -30 },
-      { x: -28, y: 25 },
-      { x: 28, y: 20 },
-      { x: 0, y: 8 },
+      { x: 0, y: -43 },
+      { x: -41, y: 36 },
+      { x: 41, y: 29 },
+      { x: 0, y: 12 },
     ],
     edges: [
       [0, 1],

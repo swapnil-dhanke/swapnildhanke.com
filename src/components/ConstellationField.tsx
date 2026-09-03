@@ -9,7 +9,8 @@ import { constellations, type Constellation } from "@/lib/constellations";
 
 const AMBIENT_STAR_COUNT = 175;
 const HOVER_RADIUS = 120;
-const REVEAL_OPACITY = 0.8;
+const REVEAL_OPACITY = 0.9;
+const LINE_WIDTH = 1.8;
 const FADE_DURATION_MS = 350;
 
 // Tune the ambient population here (kept within a 5-7 range per design).
@@ -332,7 +333,7 @@ export function ConstellationField() {
 
         if (fade.current > 0.001) {
           ctx.strokeStyle = `rgba(168, 133, 247, ${fade.current})`;
-          ctx.lineWidth = 1;
+          ctx.lineWidth = LINE_WIDTH;
           for (const [a, b] of constellation.edges) {
             const pointA = points[a];
             const pointB = points[b];
