@@ -1,6 +1,6 @@
 export const site = {
   name: "Swapnil Dhanke",
-  tagline: "Building things on the web.",
+  tagline: "Welcome to my space!",
   email: "hello@example.com",
   social: {
     github: "https://github.com/",
