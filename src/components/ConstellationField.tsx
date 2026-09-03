@@ -10,15 +10,27 @@ import { constellations, type Constellation } from "@/lib/constellations";
 const AMBIENT_STAR_COUNT = 175;
 const HOVER_RADIUS = 120;
 const REVEAL_OPACITY = 0.9;
-const LINE_WIDTH = 1.8;
+const LINE_WIDTH = 1;
 // Each edge's own fade is fast/snappy...
 const EDGE_FADE_MS = 140;
 // ...but each successive BFS ring starts this many ms after the previous one,
 // so the reveal visibly ripples outward from the star nearest the cursor.
 const RING_STAGGER_MS = 70;
 
-// Tune the ambient population here (kept within a 5-7 range per design).
-const ACTIVE_CONSTELLATION_COUNT = 6;
+// Guaranteed floor, checked every frame — not just replaced 1-for-1 on despawn.
+const MIN_ACTIVE_CONSTELLATIONS = 7;
+// Ambient self-reveal "flash", independent of hover: a single coordinated
+// sweep crosses the canvas left-to-right every 10-15s, taking 2-3s, and each
+// active constellation flashes at the moment the sweep reaches its x-position
+// — so the light visibly travels left-to-right across the screen, in order.
+const SWEEP_MIN_INTERVAL_MS = 10000;
+const SWEEP_MAX_INTERVAL_MS = 15000;
+const SWEEP_DURATION_MIN_MS = 2000;
+const SWEEP_DURATION_MAX_MS = 3000;
+const FLASH_HOLD_MIN_MS = 300;
+const FLASH_HOLD_MAX_MS = 500;
+// Faster than EDGE_FADE_MS so it reads as a sudden flash, not a gradual reveal.
+const FLASH_FADE_MS = 90;
 // Very slow drift, in pixels/second — should read as ambient, not obviously moving.
 const DRIFT_SPEED_MIN = 3;
 const DRIFT_SPEED_MAX = 7;
@@ -27,6 +39,9 @@ const EDGE_ANGLE_JITTER = Math.PI / 4;
 // How many px of a freshly spawned shape peek into the viewport immediately,
 // so it isn't instantly re-flagged as fully offscreen before it can drift in.
 const SPAWN_MARGIN = 6;
+// How many candidate positions/edges to try before giving up on a spawn this
+// frame (it'll just retry on the next frame instead of overlapping).
+const MAX_SPAWN_ATTEMPTS = 15;
 
 interface EdgeFade {
   current: number;
@@ -36,6 +51,9 @@ interface EdgeFade {
   scheduledStart: number;
   // When the tween actually started; null until `now >= scheduledStart`.
   tweenStart: number | null;
+  // How long this particular tween takes — hover-cascade and the ambient
+  // flash use different speeds, set by whichever mechanism scheduled it.
+  durationMs: number;
 }
 
 interface Bounds {
@@ -56,6 +74,21 @@ interface ConstellationInstance {
   // BFS distances from the last reveal's origin star, reused when reversing
   // the cascade so it unwinds back through the same origin.
   lastDist: number[] | null;
+  // Ambient self-reveal flash, triggered by the global left-to-right sweep.
+  flashHolding: boolean;
+  flashHoldUntil: number;
+  // Which sweep pass last triggered this instance — a fresh spawn is seeded
+  // with the sweep id active at spawn time, so a shape that appears mid-sweep
+  // just waits for the next cycle instead of retroactively triggering.
+  lastSweepId: number;
+}
+
+interface SweepState {
+  active: boolean;
+  startTime: number;
+  durationMs: number;
+  nextSweepTime: number;
+  sweepId: number;
 }
 
 function easeInOutCubic(t: number): number {
@@ -67,7 +100,14 @@ function randomRange(min: number, max: number): number {
 }
 
 function createEdgeFade(): EdgeFade {
-  return { current: 0, target: 0, fromValue: 0, scheduledStart: 0, tweenStart: null };
+  return {
+    current: 0,
+    target: 0,
+    fromValue: 0,
+    scheduledStart: 0,
+    tweenStart: null,
+    durationMs: EDGE_FADE_MS,
+  };
 }
 
 function getBounds(constellation: Constellation): Bounds {
@@ -87,6 +127,20 @@ function getBounds(constellation: Constellation): Bounds {
 }
 
 const CONSTELLATION_BOUNDS: Bounds[] = constellations.map(getBounds);
+
+function getWorldBounds(instance: ConstellationInstance): Bounds {
+  const bounds = CONSTELLATION_BOUNDS[instance.poolIndex];
+  return {
+    minX: instance.centerX + bounds.minX,
+    maxX: instance.centerX + bounds.maxX,
+    minY: instance.centerY + bounds.minY,
+    maxY: instance.centerY + bounds.maxY,
+  };
+}
+
+function boundsOverlap(a: Bounds, b: Bounds): boolean {
+  return !(a.maxX < b.minX || a.minX > b.maxX || a.maxY < b.minY || a.minY > b.maxY);
+}
 
 function buildAdjacency(constellation: Constellation): number[][] {
   const adjacency: number[][] = constellation.stars.map(() => []);
@@ -134,13 +188,18 @@ function nearestStarIndex(points: { x: number; y: number }[], mouse: { x: number
   return bestIndex;
 }
 
-function pickPoolIndex(excludeIndex: number | null): number {
-  if (constellations.length <= 1) return 0;
-  let index = Math.floor(Math.random() * constellations.length);
-  while (index === excludeIndex) {
-    index = Math.floor(Math.random() * constellations.length);
+// Constraint (a): never pick a pool entry that's already active elsewhere on screen.
+function pickPoolIndexAvoidingActive(active: ConstellationInstance[]): number {
+  const activeSet = new Set(active.map((instance) => instance.poolIndex));
+  const available: number[] = [];
+  for (let i = 0; i < constellations.length; i++) {
+    if (!activeSet.has(i)) available.push(i);
   }
-  return index;
+  if (available.length === 0) {
+    // Pool exhausted (shouldn't happen with 20+ entries vs. a handful active).
+    return Math.floor(Math.random() * constellations.length);
+  }
+  return available[Math.floor(Math.random() * available.length)];
 }
 
 function createInstance(
@@ -149,6 +208,7 @@ function createInstance(
   centerY: number,
   vx: number,
   vy: number,
+  currentSweepId: number,
 ): ConstellationInstance {
   return {
     poolIndex,
@@ -159,67 +219,113 @@ function createInstance(
     edgeFades: constellations[poolIndex].edges.map(() => createEdgeFade()),
     wasHovered: false,
     lastDist: null,
+    flashHolding: false,
+    flashHoldUntil: 0,
+    // Marks it "caught up" to whatever sweep is current/most recent, so it
+    // only participates starting from the next new sweep.
+    lastSweepId: currentSweepId,
   };
 }
 
-function spawnRandomInView(width: number, height: number): ConstellationInstance {
-  const poolIndex = pickPoolIndex(null);
+// Constraint (b): never spawn into a bounding box that overlaps an
+// already-active constellation's current bounding box. Tries several
+// candidate positions; returns null if none of them are clear (caller
+// retries on a later frame rather than spawning into an overlap).
+function trySpawnRandomInView(
+  width: number,
+  height: number,
+  active: ConstellationInstance[],
+  currentSweepId: number,
+): ConstellationInstance | null {
+  const poolIndex = pickPoolIndexAvoidingActive(active);
   const bounds = CONSTELLATION_BOUNDS[poolIndex];
 
   const minCenterX = -bounds.minX;
   const maxCenterX = width - bounds.maxX;
   const minCenterY = -bounds.minY;
   const maxCenterY = height - bounds.maxY;
+  const lowX = Math.min(minCenterX, maxCenterX);
+  const highX = Math.max(minCenterX, maxCenterX);
+  const lowY = Math.min(minCenterY, maxCenterY);
+  const highY = Math.max(minCenterY, maxCenterY);
 
-  const centerX = randomRange(Math.min(minCenterX, maxCenterX), Math.max(minCenterX, maxCenterX));
-  const centerY = randomRange(Math.min(minCenterY, maxCenterY), Math.max(minCenterY, maxCenterY));
+  for (let attempt = 0; attempt < MAX_SPAWN_ATTEMPTS; attempt++) {
+    const centerX = randomRange(lowX, highX);
+    const centerY = randomRange(lowY, highY);
+    const candidate: Bounds = {
+      minX: centerX + bounds.minX,
+      maxX: centerX + bounds.maxX,
+      minY: centerY + bounds.minY,
+      maxY: centerY + bounds.maxY,
+    };
 
-  const angle = randomRange(0, Math.PI * 2);
-  const speed = randomRange(DRIFT_SPEED_MIN, DRIFT_SPEED_MAX);
-
-  return createInstance(poolIndex, centerX, centerY, Math.cos(angle) * speed, Math.sin(angle) * speed);
-}
-
-function spawnFromEdge(excludeIndex: number, width: number, height: number): ConstellationInstance {
-  const poolIndex = pickPoolIndex(excludeIndex);
-  const bounds = CONSTELLATION_BOUNDS[poolIndex];
-
-  const edge = Math.floor(Math.random() * 4);
-  let centerX: number;
-  let centerY: number;
-  let baseAngle: number;
-
-  // Position so a small sliver (SPAWN_MARGIN px) of the shape already
-  // overlaps the viewport — spawning fully outside would immediately
-  // satisfy isFullyOffscreen() on the very next frame, before the
-  // instance ever gets a chance to drift into view.
-  switch (edge) {
-    case 0: // left, heading right
-      centerX = SPAWN_MARGIN - bounds.maxX;
-      centerY = randomRange(0, height);
-      baseAngle = 0;
-      break;
-    case 1: // right, heading left
-      centerX = width - SPAWN_MARGIN - bounds.minX;
-      centerY = randomRange(0, height);
-      baseAngle = Math.PI;
-      break;
-    case 2: // top, heading down
-      centerX = randomRange(0, width);
-      centerY = SPAWN_MARGIN - bounds.maxY;
-      baseAngle = Math.PI / 2;
-      break;
-    default: // bottom, heading up
-      centerX = randomRange(0, width);
-      centerY = height - SPAWN_MARGIN - bounds.minY;
-      baseAngle = -Math.PI / 2;
-      break;
+    if (!active.some((instance) => boundsOverlap(candidate, getWorldBounds(instance)))) {
+      const angle = randomRange(0, Math.PI * 2);
+      const speed = randomRange(DRIFT_SPEED_MIN, DRIFT_SPEED_MAX);
+      return createInstance(poolIndex, centerX, centerY, Math.cos(angle) * speed, Math.sin(angle) * speed, currentSweepId);
+    }
   }
 
-  const angle = baseAngle + randomRange(-EDGE_ANGLE_JITTER, EDGE_ANGLE_JITTER);
-  const speed = randomRange(DRIFT_SPEED_MIN, DRIFT_SPEED_MAX);
+  return null;
+}
 
-  return createInstance(poolIndex, centerX, centerY, Math.cos(angle) * speed, Math.sin(angle) * speed);
+function trySpawnFromEdge(
+  width: number,
+  height: number,
+  active: ConstellationInstance[],
+  currentSweepId: number,
+): ConstellationInstance | null {
+  const poolIndex = pickPoolIndexAvoidingActive(active);
+  const bounds = CONSTELLATION_BOUNDS[poolIndex];
+
+  for (let attempt = 0; attempt < MAX_SPAWN_ATTEMPTS; attempt++) {
+    const edge = Math.floor(Math.random() * 4);
+    let centerX: number;
+    let centerY: number;
+    let baseAngle: number;
+
+    // Position so a small sliver (SPAWN_MARGIN px) of the shape already
+    // overlaps the viewport — spawning fully outside would immediately
+    // satisfy isFullyOffscreen() on the very next frame, before the
+    // instance ever gets a chance to drift into view.
+    switch (edge) {
+      case 0: // left, heading right
+        centerX = SPAWN_MARGIN - bounds.maxX;
+        centerY = randomRange(0, height);
+        baseAngle = 0;
+        break;
+      case 1: // right, heading left
+        centerX = width - SPAWN_MARGIN - bounds.minX;
+        centerY = randomRange(0, height);
+        baseAngle = Math.PI;
+        break;
+      case 2: // top, heading down
+        centerX = randomRange(0, width);
+        centerY = SPAWN_MARGIN - bounds.maxY;
+        baseAngle = Math.PI / 2;
+        break;
+      default: // bottom, heading up
+        centerX = randomRange(0, width);
+        centerY = height - SPAWN_MARGIN - bounds.minY;
+        baseAngle = -Math.PI / 2;
+        break;
+    }
+
+    const candidate: Bounds = {
+      minX: centerX + bounds.minX,
+      maxX: centerX + bounds.maxX,
+      minY: centerY + bounds.minY,
+      maxY: centerY + bounds.maxY,
+    };
+
+    if (!active.some((instance) => boundsOverlap(candidate, getWorldBounds(instance)))) {
+      const angle = baseAngle + randomRange(-EDGE_ANGLE_JITTER, EDGE_ANGLE_JITTER);
+      const speed = randomRange(DRIFT_SPEED_MIN, DRIFT_SPEED_MAX);
+      return createInstance(poolIndex, centerX, centerY, Math.cos(angle) * speed, Math.sin(angle) * speed, currentSweepId);
+    }
+  }
+
+  return null;
 }
 
 function isFullyOffscreen(instance: ConstellationInstance, width: number, height: number): boolean {
@@ -238,6 +344,13 @@ export function ConstellationField() {
   const sizeRef = useRef({ width: 0, height: 0 });
   const mouseRef = useRef<{ x: number; y: number } | null>(null);
   const activeRef = useRef<ConstellationInstance[]>([]);
+  const sweepRef = useRef<SweepState>({
+    active: false,
+    startTime: 0,
+    durationMs: 0,
+    nextSweepTime: 0,
+    sweepId: 0,
+  });
   const lastFrameTimeRef = useRef<number | null>(null);
   const rafRef = useRef<number | undefined>(undefined);
 
@@ -330,11 +443,19 @@ export function ConstellationField() {
     resize();
     window.addEventListener("resize", resize);
 
+    if (sweepRef.current.nextSweepTime === 0) {
+      sweepRef.current.nextSweepTime =
+        performance.now() + randomRange(SWEEP_MIN_INTERVAL_MS, SWEEP_MAX_INTERVAL_MS);
+    }
+
     if (activeRef.current.length === 0) {
       const { width, height } = sizeRef.current;
-      activeRef.current = Array.from({ length: ACTIVE_CONSTELLATION_COUNT }, () =>
-        spawnRandomInView(width, height),
-      );
+      const initial: ConstellationInstance[] = [];
+      for (let n = 0; n < MIN_ACTIVE_CONSTELLATIONS; n++) {
+        const spawned = trySpawnRandomInView(width, height, initial, sweepRef.current.sweepId);
+        if (spawned) initial.push(spawned);
+      }
+      activeRef.current = initial;
     }
 
     const handleMouseMove = (e: MouseEvent) => {
@@ -357,6 +478,28 @@ export function ConstellationField() {
 
       const active = activeRef.current;
 
+      // Global left-to-right sweep: starts a new pass every 10-15s, taking
+      // 2-3s to cross the full width. sweepX is null when no sweep is active.
+      const sweep = sweepRef.current;
+      let sweepX: number | null = null;
+
+      if (!sweep.active && now >= sweep.nextSweepTime) {
+        sweep.active = true;
+        sweep.startTime = now;
+        sweep.durationMs = randomRange(SWEEP_DURATION_MIN_MS, SWEEP_DURATION_MAX_MS);
+        sweep.sweepId += 1;
+      }
+
+      if (sweep.active) {
+        const progress = (now - sweep.startTime) / sweep.durationMs;
+        if (progress >= 1) {
+          sweep.active = false;
+          sweep.nextSweepTime = now + randomRange(SWEEP_MIN_INTERVAL_MS, SWEEP_MAX_INTERVAL_MS);
+        } else {
+          sweepX = progress * width;
+        }
+      }
+
       for (let i = active.length - 1; i >= 0; i--) {
         const instance = active[i];
         instance.centerX += instance.vx * dt;
@@ -364,7 +507,6 @@ export function ConstellationField() {
 
         if (isFullyOffscreen(instance, width, height)) {
           active.splice(i, 1);
-          active.push(spawnFromEdge(instance.poolIndex, width, height));
           continue;
         }
 
@@ -382,32 +524,75 @@ export function ConstellationField() {
             return dx * dx + dy * dy <= HOVER_RADIUS * HOVER_RADIUS;
           });
 
+        // Ambient self-reveal flash: triggered by the global sweep reaching
+        // this instance's x-position (once per sweep pass), independent of
+        // hover. Uses the same edge-fade fields as hover so they never fight
+        // — if hover already has the lines revealed (or still wants them
+        // revealed), the flash's own transitions are a no-op visually.
+        if (
+          !instance.flashHolding &&
+          sweepX !== null &&
+          instance.lastSweepId !== sweep.sweepId &&
+          instance.centerX <= sweepX
+        ) {
+          instance.lastSweepId = sweep.sweepId;
+          instance.flashHolding = true;
+          instance.flashHoldUntil = now + randomRange(FLASH_HOLD_MIN_MS, FLASH_HOLD_MAX_MS);
+
+          if (!isHovered) {
+            instance.edgeFades.forEach((fade) => {
+              fade.target = REVEAL_OPACITY;
+              fade.scheduledStart = now;
+              fade.tweenStart = null;
+              fade.durationMs = FLASH_FADE_MS;
+            });
+          }
+        } else if (instance.flashHolding && now >= instance.flashHoldUntil) {
+          instance.flashHolding = false;
+
+          if (!isHovered) {
+            instance.edgeFades.forEach((fade) => {
+              fade.target = 0;
+              fade.scheduledStart = now;
+              fade.tweenStart = null;
+              fade.durationMs = FLASH_FADE_MS;
+            });
+          }
+        }
+
         // On a hover-state transition, (re)schedule every edge's fade with a
         // BFS-ring-based delay so the reveal ripples outward from the star
-        // nearest the cursor (or unwinds back into it on fade-out).
+        // nearest the cursor (or unwinds back into it on fade-out). Skip the
+        // fade-OUT specifically if the ambient flash is still holding this
+        // constellation revealed — it'll fade out once the flash lets go.
         if (isHovered !== instance.wasHovered) {
-          let dist = instance.lastDist;
+          const skipBecauseFlashHolding = !isHovered && instance.flashHolding;
 
-          if (isHovered || dist === null) {
-            const origin = mouse !== null ? nearestStarIndex(points, mouse) : 0;
-            dist = bfsDistances(CONSTELLATION_ADJACENCY[instance.poolIndex], origin);
-            instance.lastDist = dist;
+          if (!skipBecauseFlashHolding) {
+            let dist = instance.lastDist;
+
+            if (isHovered || dist === null) {
+              const origin = mouse !== null ? nearestStarIndex(points, mouse) : 0;
+              dist = bfsDistances(CONSTELLATION_ADJACENCY[instance.poolIndex], origin);
+              instance.lastDist = dist;
+            }
+
+            const edgeRings = constellation.edges.map(([a, b]) => {
+              const ring = Math.min(dist![a], dist![b]);
+              return Number.isFinite(ring) ? ring : 0;
+            });
+            const maxRing = edgeRings.length > 0 ? Math.max(...edgeRings) : 0;
+            const target = isHovered ? REVEAL_OPACITY : 0;
+
+            instance.edgeFades.forEach((fade, index) => {
+              const ring = edgeRings[index];
+              const delay = (isHovered ? ring : maxRing - ring) * RING_STAGGER_MS;
+              fade.scheduledStart = now + delay;
+              fade.tweenStart = null;
+              fade.target = target;
+              fade.durationMs = EDGE_FADE_MS;
+            });
           }
-
-          const edgeRings = constellation.edges.map(([a, b]) => {
-            const ring = Math.min(dist![a], dist![b]);
-            return Number.isFinite(ring) ? ring : 0;
-          });
-          const maxRing = edgeRings.length > 0 ? Math.max(...edgeRings) : 0;
-          const target = isHovered ? REVEAL_OPACITY : 0;
-
-          instance.edgeFades.forEach((fade, index) => {
-            const ring = edgeRings[index];
-            const delay = (isHovered ? ring : maxRing - ring) * RING_STAGGER_MS;
-            fade.scheduledStart = now + delay;
-            fade.tweenStart = null;
-            fade.target = target;
-          });
 
           instance.wasHovered = isHovered;
         }
@@ -423,7 +608,7 @@ export function ConstellationField() {
                 fade.tweenStart = now;
                 fade.fromValue = fade.current;
               }
-              const progress = Math.min((now - fade.tweenStart) / EDGE_FADE_MS, 1);
+              const progress = Math.min((now - fade.tweenStart) / fade.durationMs, 1);
               fade.current = fade.fromValue + (fade.target - fade.fromValue) * easeInOutCubic(progress);
             }
 
@@ -452,6 +637,15 @@ export function ConstellationField() {
           ctx.arc(point.x, point.y, 2.2, 0, Math.PI * 2);
           ctx.fill();
         }
+      }
+
+      // Continuous floor check — not just a 1-for-1 despawn replacement.
+      // If a spawn attempt can't find a non-overlapping spot, stop for this
+      // frame; it'll simply retry on the next one.
+      while (active.length < MIN_ACTIVE_CONSTELLATIONS) {
+        const spawned = trySpawnFromEdge(width, height, active, sweep.sweepId);
+        if (!spawned) break;
+        active.push(spawned);
       }
 
       rafRef.current = requestAnimationFrame(draw);
