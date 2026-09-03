@@ -1,41 +1,85 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import Particles, { initParticlesEngine } from "@tsparticles/react";
+import { loadSlim } from "@tsparticles/slim";
+import { loadTwinkleUpdater } from "@tsparticles/updater-twinkle";
+import type { ISourceOptions } from "@tsparticles/engine";
 import { constellations } from "@/lib/constellations";
 
 const AMBIENT_STAR_COUNT = 175;
-const BACKGROUND_COLOR = "#05050f";
-
-interface AmbientStar {
-  x: number;
-  y: number;
-  radius: number;
-  baseOpacity: number;
-  phase: number;
-  speed: number;
-}
-
-function createAmbientStars(count: number): AmbientStar[] {
-  const stars: AmbientStar[] = [];
-  for (let i = 0; i < count; i++) {
-    stars.push({
-      x: Math.random(),
-      y: Math.random(),
-      radius: 0.5 + Math.random() * 1,
-      baseOpacity: 0.25 + Math.random() * 0.5,
-      phase: Math.random() * Math.PI * 2,
-      speed: 0.4 + Math.random() * 0.8,
-    });
-  }
-  return stars;
-}
 
 export function ConstellationField() {
+  const [engineReady, setEngineReady] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const ambientStarsRef = useRef<AmbientStar[]>([]);
   const sizeRef = useRef({ width: 0, height: 0 });
   const lineOpacityRef = useRef(0);
   const rafRef = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    initParticlesEngine(async (engine) => {
+      await loadSlim(engine);
+      await loadTwinkleUpdater(engine);
+    }).then(() => {
+      if (!cancelled) setEngineReady(true);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const particlesOptions = useMemo<ISourceOptions>(
+    () =>
+      ({
+        fullScreen: { enable: false },
+        background: { color: { value: "transparent" } },
+        detectRetina: true,
+        fpsLimit: 60,
+        particles: {
+          number: {
+            value: AMBIENT_STAR_COUNT,
+            density: { enable: false },
+          },
+          color: { value: "#ffffff" },
+          opacity: {
+            value: { min: 0.15, max: 0.7 },
+            animation: {
+              enable: true,
+              sync: false,
+              mode: "auto",
+              startValue: "random",
+              speed: 0.5,
+            },
+          },
+          size: {
+            value: { min: 0.5, max: 1.4 },
+          },
+          links: { enable: false },
+          move: {
+            enable: true,
+            speed: 0.05,
+            direction: "none",
+            random: true,
+            straight: false,
+            outModes: { default: "out" },
+          },
+          // Provided by @tsparticles/updater-twinkle; not part of the core
+          // ISourceOptions typings, so it's injected via this cast.
+          twinkle: {
+            particles: {
+              enable: true,
+              frequency: 0.03,
+              opacity: 1,
+            },
+          },
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      }) as any as ISourceOptions,
+    [],
+  );
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -43,8 +87,6 @@ export function ConstellationField() {
 
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-
-    ambientStarsRef.current = createAmbientStars(AMBIENT_STAR_COUNT);
 
     const resize = () => {
       const dpr = window.devicePixelRatio || 1;
@@ -63,24 +105,9 @@ export function ConstellationField() {
     resize();
     window.addEventListener("resize", resize);
 
-    const startTime = performance.now();
-
-    const draw = (now: number) => {
-      const elapsed = (now - startTime) / 1000;
+    const draw = () => {
       const { width, height } = sizeRef.current;
-
-      ctx.fillStyle = BACKGROUND_COLOR;
-      ctx.fillRect(0, 0, width, height);
-
-      for (const star of ambientStarsRef.current) {
-        const twinkle = 0.5 + 0.5 * Math.sin(elapsed * star.speed + star.phase);
-        const opacity = star.baseOpacity * (0.4 + 0.6 * twinkle);
-
-        ctx.beginPath();
-        ctx.fillStyle = `rgba(255, 255, 255, ${opacity.toFixed(3)})`;
-        ctx.arc(star.x * width, star.y * height, star.radius, 0, Math.PI * 2);
-        ctx.fill();
-      }
+      ctx.clearRect(0, 0, width, height);
 
       const lineOpacity = lineOpacityRef.current;
 
@@ -131,5 +158,12 @@ export function ConstellationField() {
     };
   }, []);
 
-  return <canvas ref={canvasRef} className="fixed inset-0" aria-hidden="true" />;
+  return (
+    <div className="fixed inset-0 bg-[#05050f]">
+      {engineReady && (
+        <Particles id="constellation-ambient" className="absolute inset-0" options={particlesOptions} />
+      )}
+      <canvas ref={canvasRef} className="absolute inset-0" aria-hidden="true" />
+    </div>
+  );
 }
