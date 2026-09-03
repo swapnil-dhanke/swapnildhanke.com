@@ -61,3 +61,35 @@ html::-webkit-scrollbar {
   will-change: transform;
   transform: translateZ(0);
 }
+
+/*
+ * Active nav icon highlight — a soft "ignited star" glow rather than a hard
+ * UI ring, using the same purple (rgb(168 133 247)) as the constellation
+ * hover-reveal lines so the two effects read as one visual language.
+ */
+.nav-star-glow {
+  background: radial-gradient(
+    circle,
+    rgb(168 133 247 / 35%) 0%,
+    rgb(168 133 247 / 16%) 50%,
+    rgb(168 133 247 / 0%) 75%
+  );
+  box-shadow:
+    0 0 10px 1px rgb(168 133 247 / 45%),
+    0 0 22px 4px rgb(168 133 247 / 22%);
+  animation: nav-star-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes nav-star-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 10px 1px rgb(168 133 247 / 45%),
+      0 0 22px 4px rgb(168 133 247 / 22%);
+  }
+  50% {
+    box-shadow:
+      0 0 13px 2px rgb(168 133 247 / 55%),
+      0 0 28px 6px rgb(168 133 247 / 30%);
+  }
+}

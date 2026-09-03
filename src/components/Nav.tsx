@@ -1,8 +1,8 @@
 "use client";
 
+import { useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { AnimatePresence, motion } from "framer-motion";
 import { IconComet, IconRocket, IconTelescope, IconUfo, IconWorld } from "@tabler/icons-react";
 
 const NAV_ITEMS = [
@@ -13,56 +13,71 @@ const NAV_ITEMS = [
   { href: "/blogs", label: "Blogs", Icon: IconComet },
 ] as const;
 
-// Shared across renders instead of a fresh object literal each time — this
-// only animates `transform`/`opacity` (layout/layoutId compile to those, not
-// width/padding), so it's GPU-accelerated rather than triggering reflow.
-const PILL_SPRING = { type: "spring", stiffness: 400, damping: 32 } as const;
+// Matches EDGE_FADE_MS in ConstellationField.tsx — the fast-snap duration
+// used for the hover-reveal lines, so the label fade reads consistently.
+const LABEL_FADE_MS = 140;
 
 export function Nav() {
   const pathname = usePathname();
+  const activeItem = NAV_ITEMS.find((item) => item.href === pathname) ?? NAV_ITEMS[0];
+
+  const barRef = useRef<HTMLElement>(null);
+  const itemRefs = useRef<Record<string, HTMLAnchorElement | null>>({});
+  const [labelX, setLabelX] = useState<number | null>(null);
+  const [labelVisible, setLabelVisible] = useState(false);
+
+  useLayoutEffect(() => {
+    const bar = barRef.current;
+    const activeEl = itemRefs.current[activeItem.href];
+    if (!bar || !activeEl) return;
+
+    const barRect = bar.getBoundingClientRect();
+    const itemRect = activeEl.getBoundingClientRect();
+    setLabelX(itemRect.left + itemRect.width / 2 - barRect.left);
+
+    setLabelVisible(false);
+    const raf = requestAnimationFrame(() => setLabelVisible(true));
+    return () => cancelAnimationFrame(raf);
+  }, [activeItem.href]);
 
   return (
-    <nav className="fixed top-6 left-1/2 z-50 -translate-x-1/2">
-      <ul className="nav-glass flex items-center gap-1 rounded-full border border-white/10 bg-white/8 p-1.5 backdrop-blur-md">
+    <div className="fixed top-6 left-1/2 z-50 -translate-x-1/2">
+      <nav
+        ref={barRef}
+        className="nav-glass flex items-center gap-1 rounded-full border border-white/10 bg-white/8 p-2 backdrop-blur-md"
+      >
         {NAV_ITEMS.map(({ href, label, Icon }) => {
-          const isActive = pathname === href;
+          const isActive = href === activeItem.href;
 
           return (
-            <li key={href}>
-              <Link href={href}>
-                <motion.span
-                  layout
-                  className="relative flex items-center gap-2 rounded-full px-3 py-2 text-white"
-                  transition={PILL_SPRING}
-                >
-                  {isActive && (
-                    <motion.span
-                      layoutId="nav-active-pill"
-                      className="absolute inset-0 rounded-full bg-white/15"
-                      transition={PILL_SPRING}
-                    />
-                  )}
-                  <Icon className="relative z-10 h-5 w-5 shrink-0" stroke={2} />
-                  <AnimatePresence initial={false}>
-                    {isActive && (
-                      <motion.span
-                        key="label"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        transition={{ duration: 0.15 }}
-                        className="relative z-10 whitespace-nowrap text-sm font-medium"
-                      >
-                        {label}
-                      </motion.span>
-                    )}
-                  </AnimatePresence>
-                </motion.span>
-              </Link>
-            </li>
+            <Link
+              key={href}
+              href={href}
+              aria-label={label}
+              ref={(el) => {
+                itemRefs.current[href] = el;
+              }}
+              className="relative flex h-10 w-10 items-center justify-center rounded-full text-white"
+            >
+              {isActive && <span className="nav-star-glow absolute inset-0 rounded-full" aria-hidden />}
+              <Icon className="relative z-10 h-5 w-5" stroke={2} />
+            </Link>
           );
         })}
-      </ul>
-    </nav>
+      </nav>
+      <div className="relative mt-3 h-5 w-full">
+        <span
+          className="absolute top-0 text-sm font-medium whitespace-nowrap text-white transition-opacity ease-out"
+          style={{
+            left: labelX ?? 0,
+            transform: "translateX(-50%)",
+            opacity: labelVisible ? 1 : 0,
+            transitionDuration: `${LABEL_FADE_MS}ms`,
+          }}
+        >
+          {activeItem.label}
+        </span>
+      </div>
+    </div>
   );
 }
