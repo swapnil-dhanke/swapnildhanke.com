@@ -45,3 +45,19 @@ html::-webkit-scrollbar {
     cursor: not-allowed !important;
   }
 }
+
+/*
+ * Tailwind's backdrop-blur-* utilities only emit the unprefixed
+ * `backdrop-filter` property, not `-webkit-backdrop-filter`. Chromium/Firefox
+ * apply the unprefixed version fine, but this keeps older/Safari engines that
+ * still need the prefix from silently losing the blur. Also promotes the
+ * nav to its own compositing layer so the browser can composite it
+ * independently instead of repainting on every frame the canvas behind it
+ * redraws (backdrop-filter over continuously-animating content is
+ * inherently costlier than over static content — this bounds that cost).
+ */
+.nav-glass {
+  -webkit-backdrop-filter: blur(12px);
+  will-change: transform;
+  transform: translateZ(0);
+}
