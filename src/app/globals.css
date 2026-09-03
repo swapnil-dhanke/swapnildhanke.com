@@ -60,7 +60,7 @@ html::-webkit-scrollbar {
  * inherently costlier than over static content — this bounds that cost).
  */
 .nav-glass {
-  -webkit-backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(4px);
   will-change: transform;
   transform: translateZ(0);
 }
@@ -82,5 +82,24 @@ html::-webkit-scrollbar {
   }
   50% {
     filter: drop-shadow(0 0 5px rgb(255 244 214 / 100%)) drop-shadow(0 0 13px rgb(255 224 170 / 75%));
+  }
+}
+
+/*
+ * Active nav label, centered above the arch. Remounted (via `key`) on every
+ * route change, so this fade-in replays each time — a fast-snap crossfade
+ * matching EDGE_FADE_MS in ConstellationField.tsx, not a slow fade. Ends at
+ * opacity 1 and stays there (`forwards`), so the label is always visible.
+ */
+.nav-label {
+  animation: nav-label-fade-in 140ms ease-out forwards;
+}
+
+@keyframes nav-label-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
   }
 }
