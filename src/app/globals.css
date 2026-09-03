@@ -3,7 +3,10 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
-  --accent: #a855f7;
+  /* Cursor accent — was left over as purple (#a855f7) from an earlier
+   * design pass; the custom cursor's dot sits directly in the starfield,
+   * so it must be white like the rest of the stars, not a stray color. */
+  --accent: #ffffff;
 }
 
 @theme inline {
@@ -63,33 +66,21 @@ html::-webkit-scrollbar {
 }
 
 /*
- * Active nav icon highlight — a soft "ignited star" glow rather than a hard
- * UI ring, using the same purple (rgb(168 133 247)) as the constellation
- * hover-reveal lines so the two effects read as one visual language.
+ * Active nav icon highlight — the icon itself emits a soft warm-white glow
+ * (layered drop-shadows, no separate ring/badge element behind it) so it
+ * reads as the icon lighting up like a star, not a UI focus indicator.
  */
-.nav-star-glow {
-  background: radial-gradient(
-    circle,
-    rgb(168 133 247 / 35%) 0%,
-    rgb(168 133 247 / 16%) 50%,
-    rgb(168 133 247 / 0%) 75%
-  );
-  box-shadow:
-    0 0 10px 1px rgb(168 133 247 / 45%),
-    0 0 22px 4px rgb(168 133 247 / 22%);
-  animation: nav-star-pulse 2.4s ease-in-out infinite;
+.nav-icon-glow {
+  filter: drop-shadow(0 0 4px rgb(255 244 214 / 90%)) drop-shadow(0 0 10px rgb(255 224 170 / 60%));
+  animation: nav-icon-pulse 2.4s ease-in-out infinite;
 }
 
-@keyframes nav-star-pulse {
+@keyframes nav-icon-pulse {
   0%,
   100% {
-    box-shadow:
-      0 0 10px 1px rgb(168 133 247 / 45%),
-      0 0 22px 4px rgb(168 133 247 / 22%);
+    filter: drop-shadow(0 0 4px rgb(255 244 214 / 90%)) drop-shadow(0 0 10px rgb(255 224 170 / 60%));
   }
   50% {
-    box-shadow:
-      0 0 13px 2px rgb(168 133 247 / 55%),
-      0 0 28px 6px rgb(168 133 247 / 30%);
+    filter: drop-shadow(0 0 5px rgb(255 244 214 / 100%)) drop-shadow(0 0 13px rgb(255 224 170 / 75%));
   }
 }

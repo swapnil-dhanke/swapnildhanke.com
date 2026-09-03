@@ -57,10 +57,9 @@ export function Nav() {
               ref={(el) => {
                 itemRefs.current[href] = el;
               }}
-              className="relative flex h-10 w-10 items-center justify-center rounded-full text-white"
+              className="flex h-10 w-10 items-center justify-center rounded-full text-white"
             >
-              {isActive && <span className="nav-star-glow absolute inset-0 rounded-full" aria-hidden />}
-              <Icon className="relative z-10 h-5 w-5" stroke={2} />
+              <Icon className={`h-5 w-5 ${isActive ? "nav-icon-glow" : ""}`} stroke={2} />
             </Link>
           );
         })}
