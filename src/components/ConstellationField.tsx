@@ -188,6 +188,33 @@ function nearestStarIndex(points: { x: number; y: number }[], mouse: { x: number
   return bestIndex;
 }
 
+function leftmostStarIndex(constellation: Constellation): number {
+  let bestIndex = 0;
+  let bestX = Infinity;
+
+  constellation.stars.forEach((star, index) => {
+    if (star.x < bestX) {
+      bestX = star.x;
+      bestIndex = index;
+    }
+  });
+
+  return bestIndex;
+}
+
+function computeEdgeRings(edges: [number, number][], dist: number[]): number[] {
+  return edges.map(([a, b]) => {
+    const ring = Math.min(dist[a], dist[b]);
+    return Number.isFinite(ring) ? ring : 0;
+  });
+}
+
+// The ambient flash always cascades outward from each shape's leftmost star
+// (fixed per shape, unlike hover's cursor-dependent origin) — precomputed once.
+const CONSTELLATION_FLASH_DIST: number[][] = constellations.map((constellation, i) =>
+  bfsDistances(CONSTELLATION_ADJACENCY[i], leftmostStarIndex(constellation)),
+);
+
 // Constraint (a): never pick a pool entry that's already active elsewhere on screen.
 function pickPoolIndexAvoidingActive(active: ConstellationInstance[]): number {
   const activeSet = new Set(active.map((instance) => instance.poolIndex));
@@ -526,9 +553,11 @@ export function ConstellationField() {
 
         // Ambient self-reveal flash: triggered by the global sweep reaching
         // this instance's x-position (once per sweep pass), independent of
-        // hover. Uses the same edge-fade fields as hover so they never fight
-        // — if hover already has the lines revealed (or still wants them
-        // revealed), the flash's own transitions are a no-op visually.
+        // hover. Cascades outward from the shape's leftmost star — same
+        // ring-stagger mechanism as hover, just fixed origin and a faster
+        // per-edge fade. Uses the same edge-fade fields as hover so they
+        // never fight — if hover already has the lines revealed (or still
+        // wants them revealed), the flash's own transitions are a no-op.
         if (
           !instance.flashHolding &&
           sweepX !== null &&
@@ -540,9 +569,12 @@ export function ConstellationField() {
           instance.flashHoldUntil = now + randomRange(FLASH_HOLD_MIN_MS, FLASH_HOLD_MAX_MS);
 
           if (!isHovered) {
-            instance.edgeFades.forEach((fade) => {
+            const flashDist = CONSTELLATION_FLASH_DIST[instance.poolIndex];
+            const edgeRings = computeEdgeRings(constellation.edges, flashDist);
+
+            instance.edgeFades.forEach((fade, index) => {
               fade.target = REVEAL_OPACITY;
-              fade.scheduledStart = now;
+              fade.scheduledStart = now + edgeRings[index] * RING_STAGGER_MS;
               fade.tweenStart = null;
               fade.durationMs = FLASH_FADE_MS;
             });
@@ -551,9 +583,13 @@ export function ConstellationField() {
           instance.flashHolding = false;
 
           if (!isHovered) {
-            instance.edgeFades.forEach((fade) => {
+            const flashDist = CONSTELLATION_FLASH_DIST[instance.poolIndex];
+            const edgeRings = computeEdgeRings(constellation.edges, flashDist);
+            const maxRing = edgeRings.length > 0 ? Math.max(...edgeRings) : 0;
+
+            instance.edgeFades.forEach((fade, index) => {
               fade.target = 0;
-              fade.scheduledStart = now;
+              fade.scheduledStart = now + (maxRing - edgeRings[index]) * RING_STAGGER_MS;
               fade.tweenStart = null;
               fade.durationMs = FLASH_FADE_MS;
             });
@@ -577,10 +613,7 @@ export function ConstellationField() {
               instance.lastDist = dist;
             }
 
-            const edgeRings = constellation.edges.map(([a, b]) => {
-              const ring = Math.min(dist![a], dist![b]);
-              return Number.isFinite(ring) ? ring : 0;
-            });
+            const edgeRings = computeEdgeRings(constellation.edges, dist!);
             const maxRing = edgeRings.length > 0 ? Math.max(...edgeRings) : 0;
             const target = isHovered ? REVEAL_OPACITY : 0;
 
