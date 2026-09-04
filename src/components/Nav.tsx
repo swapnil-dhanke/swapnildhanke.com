@@ -41,52 +41,41 @@ const ARCH_MID_X = BAR_WIDTH / 2;
 // symmetric, so this is the same on both sides.
 const ARCH_HALF_WIDTH = ARCH_MID_X - ARCH_LEFT;
 
-// Smoothstep: the standard cubic with value/slope 0 at t=0 and value 1/slope
-// 0 at t=1 — i.e. zero tangent at BOTH ends. Used for the arch's vertical
-// profile so it flattens out exactly where it meets the semicircular end
-// caps (whose own tangent is horizontal there too) and at the center peak,
-// instead of arriving at a slope and creating a visible kink at the seams.
-function smoothstep(t: number): number {
-  const clamped = Math.min(Math.max(t, 0), 1);
-  return clamped * clamped * (3 - 2 * clamped);
-}
+// Radius of the circle whose sagitta (dip at the midpoint, relative to the
+// flat chord between the two cap seams) equals ARC_DEPTH — standard
+// chord/sagitta relation: R = (halfChord² + sagitta²) / (2·sagitta). A true
+// circular arc has constant curvature everywhere (no piecewise easing, no
+// seams to smooth out), which is what actually reads as a single clean
+// "C"/bowl curve rather than an approximated hump.
+const ARCH_RADIUS =
+  (ARCH_HALF_WIDTH * ARCH_HALF_WIDTH + ARC_DEPTH * ARC_DEPTH) / (2 * ARC_DEPTH);
 
 // How far below the bar's vertical center a point at horizontal position x
-// sits, per the arch — 0 at the capped edges, ARC_DEPTH at the midpoint,
-// following the same smoothstep profile as buildArchPath's outline below.
+// sits, per the arch — 0 at the capped edges, ARC_DEPTH at the midpoint.
+// This is a point on the same circle buildArchPath draws for the top edge.
 function curveOffset(x: number): number {
-  const t = 1 - Math.abs(x - ARCH_MID_X) / ARCH_HALF_WIDTH;
-  return ARC_DEPTH * smoothstep(t);
+  const dx = x - ARCH_MID_X;
+  const dy = Math.sqrt(Math.max(ARCH_RADIUS * ARCH_RADIUS - dx * dx, 0));
+  return ARC_DEPTH - (ARCH_RADIUS - dy);
 }
 
-// A pill of constant thickness bent along the arch: each long edge is two
-// cubic-bezier halves forming a smoothstep hump (baseline -> peak -> back to
-// baseline), so both the seams (meeting the caps) and the center peak have
-// zero slope — no kinks anywhere. Bottom edge is the same shape, shifted
-// down by BAR_HEIGHT and bulging further down instead of up.
+// A pill of constant thickness bent along a true circular arc: each long
+// edge is a single circular arc (constant curvature, drawn with one SVG "A"
+// command) rather than a bezier approximation, closed with semicircular end
+// caps. The bottom edge is the exact same arc shape, just translated down by
+// BAR_HEIGHT — for a shallow arc this is visually indistinguishable from a
+// true perpendicular offset, while staying simple to compute.
 function buildArchPath(): string {
-  // Standard cubic-bezier control-point spacing (thirds of the span) for
-  // approximating a smooth curve; any interior x-spacing preserves the
-  // zero-tangent endpoints, this just gives an evenly-paced shape.
-  const leftCtrl1X = ARCH_LEFT + ARCH_HALF_WIDTH / 3;
-  const leftCtrl2X = ARCH_LEFT + (2 * ARCH_HALF_WIDTH) / 3;
-  const rightCtrl1X = ARCH_MID_X + ARCH_HALF_WIDTH / 3;
-  const rightCtrl2X = ARCH_MID_X + (2 * ARCH_HALF_WIDTH) / 3;
-
-  const topPeakY = ARC_DEPTH;
   const bottomBaseY = BAR_HEIGHT;
-  const bottomPeakY = BAR_HEIGHT + ARC_DEPTH;
 
   return [
     `M ${ARCH_LEFT} 0`,
-    // top edge: baseline -> peak -> baseline
-    `C ${leftCtrl1X} 0 ${leftCtrl2X} ${topPeakY} ${ARCH_MID_X} ${topPeakY}`,
-    `C ${rightCtrl1X} ${topPeakY} ${rightCtrl2X} 0 ${ARCH_RIGHT} 0`,
+    // top edge: one circular arc, bulging down toward the midpoint
+    `A ${ARCH_RADIUS} ${ARCH_RADIUS} 0 0 0 ${ARCH_RIGHT} 0`,
     // right cap
     `A ${CAP_RADIUS} ${CAP_RADIUS} 0 0 1 ${ARCH_RIGHT} ${bottomBaseY}`,
-    // bottom edge (traversed right-to-left): baseline -> peak -> baseline
-    `C ${rightCtrl2X} ${bottomBaseY} ${rightCtrl1X} ${bottomPeakY} ${ARCH_MID_X} ${bottomPeakY}`,
-    `C ${leftCtrl2X} ${bottomPeakY} ${leftCtrl1X} ${bottomBaseY} ${ARCH_LEFT} ${bottomBaseY}`,
+    // bottom edge: the same arc, traversed right-to-left (sweep reversed)
+    `A ${ARCH_RADIUS} ${ARCH_RADIUS} 0 0 1 ${ARCH_LEFT} ${bottomBaseY}`,
     // left cap
     `A ${CAP_RADIUS} ${CAP_RADIUS} 0 0 1 ${ARCH_LEFT} 0`,
     "Z",
