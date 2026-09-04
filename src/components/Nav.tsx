@@ -28,6 +28,11 @@ const ARC_DEPTH = 8;
 const BAR_WIDTH = H_PADDING * 2 + NAV_ITEMS.length * ITEM_SIZE + (NAV_ITEMS.length - 1) * GAP;
 const BAR_HEIGHT = ITEM_SIZE + V_PADDING * 2;
 const CAP_RADIUS = BAR_HEIGHT / 2;
+// The bottom edge bulges ARC_DEPTH px past BAR_HEIGHT at the midpoint (see
+// buildArchPath) — the drawing surface (SVG viewport + clip-path reference
+// box) must be at least this tall, or that bulge gets clipped flat by the
+// box's own bottom edge instead of rendering.
+const PATH_HEIGHT = BAR_HEIGHT + ARC_DEPTH;
 
 // How far below the bar's vertical center a point at horizontal position x
 // sits, per the arch — 0 at the capped edges, ARC_DEPTH at the midpoint.
@@ -103,7 +108,7 @@ export function Nav() {
           {current.label}
         </span>
       </div>
-      <nav className="relative" style={{ width: BAR_WIDTH, height: BAR_HEIGHT }}>
+      <nav className="relative" style={{ width: BAR_WIDTH, height: PATH_HEIGHT }}>
         <div
           className="nav-glass absolute inset-0 bg-white/12 backdrop-blur-[4px]"
           style={{ clipPath: `path('${ARCH_PATH}')` }}
@@ -111,7 +116,7 @@ export function Nav() {
         <svg
           className="pointer-events-none absolute inset-0"
           width={BAR_WIDTH}
-          height={BAR_HEIGHT}
+          height={PATH_HEIGHT}
           aria-hidden
         >
           <path d={ARCH_PATH} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth={1} />
