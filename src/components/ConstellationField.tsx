@@ -25,8 +25,6 @@ const LABEL_OPACITY = 1;
 // whichever side keeps it inside the viewport.
 const TOOLTIP_OFFSET_X = 18;
 const TOOLTIP_OFFSET_Y = 22;
-const TOOLTIP_DOT_RADIUS = 3;
-const TOOLTIP_DOT_GAP = 8;
 const TOOLTIP_LINE_GAP = 15;
 // Each edge's own fade is fast/snappy...
 const EDGE_FADE_MS = 140;
@@ -106,9 +104,11 @@ interface ConstellationInstance {
   // When continuous hover on this instance began; null whenever it isn't
   // currently hovered (i.e. the dwell clock is reset).
   dwellStartTime: number | null;
-  // Fade state for the name/location label, reusing the same tween shape as
-  // edgeFades but with its own (slower) durations.
-  labelFade: EdgeFade;
+  // Set once this hover session has already taken tooltip ownership, so it
+  // fires exactly once per dwell instead of re-triggering every frame (which
+  // would fight for ownership with any other instance dwelling at the same
+  // time and flicker forever).
+  dwellFired: boolean;
   // Ambient self-reveal flash, triggered by the global left-to-right sweep.
   flashHolding: boolean;
   flashHoldUntil: number;
@@ -127,6 +127,15 @@ interface SweepState {
   durationMs: number;
   nextSweepTime: number;
   sweepId: number;
+}
+
+// The single dwell-reveal tooltip, shared across all instances (never more
+// than one visible at a time). `instance` is whichever constellation last
+// earned it; switching owners cuts the previous one off immediately instead
+// of cross-fading, so two tooltips never render on top of each other.
+interface LabelState {
+  instance: ConstellationInstance | null;
+  fade: EdgeFade;
 }
 
 function easeInOutCubic(t: number): number {
@@ -285,7 +294,7 @@ function createInstance(
     wasHovered: false,
     lastDist: null,
     dwellStartTime: null,
-    labelFade: createEdgeFade(),
+    dwellFired: false,
     flashHolding: false,
     flashHoldUntil: 0,
     // Marks it "caught up" to whatever sweep is current/most recent, so it
@@ -464,6 +473,7 @@ export function ConstellationField() {
   // Earliest time a new spawn (proactive replacement or floor top-up) is
   // allowed — enforces SPAWN_STAGGER_*_MS between any two spawn events.
   const nextSpawnAllowedRef = useRef(0);
+  const labelRef = useRef<LabelState>({ instance: null, fade: createEdgeFade() });
 
   useEffect(() => {
     let cancelled = false;
@@ -730,45 +740,39 @@ export function ConstellationField() {
         }
 
         // Dwell reveal: continuous hover on this exact instance for DWELL_MS
-        // fades in its label. Hovering a different instance never touches
-        // this one's dwellStartTime (its own isHovered is false that frame),
-        // and leaving proximity entirely resets it below.
+        // earns it the single shared tooltip. Hovering a different instance
+        // never touches this one's dwellStartTime (its own isHovered is
+        // false that frame), and leaving proximity entirely resets it below.
         if (isHovered) {
           if (instance.dwellStartTime === null) {
             instance.dwellStartTime = now;
-          } else if (
-            now - instance.dwellStartTime >= DWELL_MS &&
-            instance.labelFade.target !== LABEL_OPACITY
-          ) {
-            instance.labelFade.target = LABEL_OPACITY;
-            instance.labelFade.fromValue = instance.labelFade.current;
-            instance.labelFade.tweenStart = null;
-            instance.labelFade.scheduledStart = now;
-            instance.labelFade.durationMs = LABEL_FADE_IN_MS;
+          } else if (!instance.dwellFired && now - instance.dwellStartTime >= DWELL_MS) {
+            // Take ownership of the tooltip, cutting off whatever was
+            // showing immediately rather than cross-fading — only one
+            // tooltip is ever allowed to render. Fires exactly once per
+            // dwell session (dwellFired), so two constellations dwelling at
+            // once can't fight over ownership every frame.
+            instance.dwellFired = true;
+            labelRef.current.instance = instance;
+            const fade = labelRef.current.fade;
+            fade.current = 0;
+            fade.fromValue = 0;
+            fade.target = LABEL_OPACITY;
+            fade.tweenStart = null;
+            fade.scheduledStart = now;
+            fade.durationMs = LABEL_FADE_IN_MS;
           }
         } else {
           instance.dwellStartTime = null;
-          if (instance.labelFade.target !== 0) {
-            instance.labelFade.target = 0;
-            instance.labelFade.fromValue = instance.labelFade.current;
-            instance.labelFade.tweenStart = null;
-            instance.labelFade.scheduledStart = now;
-            instance.labelFade.durationMs = LABEL_FADE_OUT_MS;
+          instance.dwellFired = false;
+          if (labelRef.current.instance === instance && labelRef.current.fade.target !== 0) {
+            const fade = labelRef.current.fade;
+            fade.target = 0;
+            fade.fromValue = fade.current;
+            fade.tweenStart = null;
+            fade.scheduledStart = now;
+            fade.durationMs = LABEL_FADE_OUT_MS;
           }
-        }
-
-        if (now >= instance.labelFade.scheduledStart) {
-          if (instance.labelFade.tweenStart === null) {
-            instance.labelFade.tweenStart = now;
-            instance.labelFade.fromValue = instance.labelFade.current;
-          }
-          const progress = Math.min(
-            (now - instance.labelFade.tweenStart) / instance.labelFade.durationMs,
-            1,
-          );
-          instance.labelFade.current =
-            instance.labelFade.fromValue +
-            (instance.labelFade.target - instance.labelFade.fromValue) * easeInOutCubic(progress);
         }
 
         if (instance.edgeFades.length > 0) {
@@ -812,8 +816,28 @@ export function ConstellationField() {
           ctx.fill();
         }
 
-        if (instance.labelFade.current > 0.001 && labelAnchor !== null) {
-          const alpha = instance.labelFade.current;
+      }
+
+      // Single shared dwell tooltip — never more than one instance owns it
+      // (see the ownership hand-off above), so only one ever renders.
+      {
+        const labelFade = labelRef.current.fade;
+
+        if (now >= labelFade.scheduledStart) {
+          if (labelFade.tweenStart === null) {
+            labelFade.tweenStart = now;
+            labelFade.fromValue = labelFade.current;
+          }
+          const progress = Math.min((now - labelFade.tweenStart) / labelFade.durationMs, 1);
+          labelFade.current =
+            labelFade.fromValue + (labelFade.target - labelFade.fromValue) * easeInOutCubic(progress);
+        }
+
+        const owner = labelRef.current.instance;
+
+        if (owner !== null && labelFade.current > 0.001 && labelAnchor !== null) {
+          const alpha = labelFade.current;
+          const constellation = constellations[owner.poolIndex];
           const nameFont = "600 13px system-ui, -apple-system, sans-serif";
           const locationFont = "11px system-ui, -apple-system, sans-serif";
 
@@ -823,13 +847,12 @@ export function ConstellationField() {
           const locationWidth = ctx.measureText(constellation.location).width;
 
           const textWidth = Math.max(nameWidth, locationWidth);
-          const tooltipWidth = TOOLTIP_DOT_RADIUS * 2 + TOOLTIP_DOT_GAP + textWidth;
           const tooltipHeight = TOOLTIP_LINE_GAP + 6;
 
           // Flip to whichever side of the cursor keeps the tooltip on-screen.
           const originX =
-            labelAnchor.x + TOOLTIP_OFFSET_X + tooltipWidth > width - 12
-              ? labelAnchor.x - TOOLTIP_OFFSET_X - tooltipWidth
+            labelAnchor.x + TOOLTIP_OFFSET_X + textWidth > width - 12
+              ? labelAnchor.x - TOOLTIP_OFFSET_X - textWidth
               : labelAnchor.x + TOOLTIP_OFFSET_X;
           const originY =
             labelAnchor.y + TOOLTIP_OFFSET_Y + tooltipHeight > height - 12
@@ -837,25 +860,17 @@ export function ConstellationField() {
               : labelAnchor.y + TOOLTIP_OFFSET_Y;
 
           const nameY = originY + 5;
-          const dotX = originX + TOOLTIP_DOT_RADIUS;
-          const dotY = nameY - 4;
-          const textX = originX + TOOLTIP_DOT_RADIUS * 2 + TOOLTIP_DOT_GAP;
-
-          ctx.beginPath();
-          ctx.fillStyle = `rgba(168, 133, 247, ${alpha})`;
-          ctx.arc(dotX, dotY, TOOLTIP_DOT_RADIUS, 0, Math.PI * 2);
-          ctx.fill();
 
           ctx.textAlign = "left";
           ctx.textBaseline = "alphabetic";
 
           ctx.font = nameFont;
           ctx.fillStyle = `rgba(255, 255, 255, ${0.92 * alpha})`;
-          ctx.fillText(constellation.name, textX, nameY);
+          ctx.fillText(constellation.name, originX, nameY);
 
           ctx.font = locationFont;
           ctx.fillStyle = `rgba(200, 200, 230, ${0.7 * alpha})`;
-          ctx.fillText(constellation.location, textX, nameY + TOOLTIP_LINE_GAP);
+          ctx.fillText(constellation.location, originX, nameY + TOOLTIP_LINE_GAP);
         }
       }
 
