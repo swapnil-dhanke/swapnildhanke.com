@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { IconComet, IconRocket, IconTelescope, IconUfo, IconWorld } from "@tabler/icons-react";
@@ -11,6 +12,8 @@ const NAV_ITEMS = [
   { href: "/contact", label: "Contact", Icon: IconUfo },
   { href: "/blogs", label: "Blogs", Icon: IconComet },
 ] as const;
+
+type NavItem = (typeof NAV_ITEMS)[number];
 
 // Bar geometry — a shallow arch rather than a flat pill. The bar's outline
 // and each icon's vertical offset are both derived from the same parabolic
@@ -68,14 +71,38 @@ export function Nav() {
   const pathname = usePathname();
   const activeItem = NAV_ITEMS.find((item) => item.href === pathname) ?? NAV_ITEMS[0];
 
+  // Crossfade the label on route change: keep the previous item mounted
+  // (fading out) alongside the new one (fading in) until its own fade-out
+  // finishes. Adjusting state directly during render — React's documented
+  // pattern for reacting to a prop change using info from prior renders —
+  // rather than in an effect, so there's no extra render pass or lint issue.
+  const [current, setCurrent] = useState<NavItem>(activeItem);
+  const [previous, setPrevious] = useState<NavItem | null>(null);
+
+  if (activeItem.href !== current.href) {
+    setPrevious(current);
+    setCurrent(activeItem);
+  }
+
   return (
     <div className="fixed top-6 left-1/2 z-50 flex -translate-x-1/2 flex-col items-center gap-2">
-      {/* key={activeItem.href} remounts the span on every route change, so
-          the CSS fade-in (.nav-label, defined in globals.css) replays as a
-          fast-snap crossfade — always ends visible, no React state needed. */}
-      <span key={activeItem.href} className="nav-label text-sm font-medium text-white">
-        {activeItem.label}
-      </span>
+      <div className="relative h-5" style={{ width: BAR_WIDTH }}>
+        {previous && (
+          <span
+            key={previous.href}
+            onAnimationEnd={() => setPrevious(null)}
+            className="nav-label-exit absolute inset-x-0 text-center text-sm font-medium text-white"
+          >
+            {previous.label}
+          </span>
+        )}
+        <span
+          key={current.href}
+          className="nav-label-enter absolute inset-x-0 text-center text-sm font-medium text-white"
+        >
+          {current.label}
+        </span>
+      </div>
       <nav className="relative" style={{ width: BAR_WIDTH, height: BAR_HEIGHT }}>
         <div
           className="nav-glass absolute inset-0 bg-white/12 backdrop-blur-[4px]"
@@ -90,7 +117,7 @@ export function Nav() {
           <path d={ARCH_PATH} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth={1} />
         </svg>
         {NAV_ITEMS.map(({ href, label, Icon }, index) => {
-          const isActive = href === activeItem.href;
+          const isActive = href === current.href;
           const { left, top } = ICON_POSITIONS[index];
 
           return (
@@ -101,7 +128,18 @@ export function Nav() {
               className="absolute flex h-10 w-10 items-center justify-center rounded-full text-white"
               style={{ left, top }}
             >
-              <Icon className={`h-5 w-5 ${isActive ? "nav-icon-glow" : ""}`} stroke={2} />
+              <Icon className="h-5 w-5" stroke={2} />
+              {/* Always-present glow twin, so opacity can transition smoothly
+                  on route change — a CSS animation (the pulse) and a CSS
+                  transition can't both drive `filter` at once, so the
+                  continuous pulse lives here while a plain opacity
+                  transition (not an animation) handles the on/off crossfade. */}
+              <Icon
+                aria-hidden
+                stroke={2}
+                className="nav-icon-glow-layer pointer-events-none absolute top-1/2 left-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2"
+                style={{ opacity: isActive ? 1 : 0 }}
+              />
             </Link>
           );
         })}

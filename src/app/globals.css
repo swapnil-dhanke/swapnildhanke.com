@@ -66,13 +66,18 @@ html::-webkit-scrollbar {
 }
 
 /*
- * Active nav icon highlight — the icon itself emits a soft warm-white glow
- * (layered drop-shadows, no separate ring/badge element behind it) so it
- * reads as the icon lighting up like a star, not a UI focus indicator.
+ * Active nav icon highlight — a soft warm-white glow (layered drop-shadows,
+ * no separate ring/badge element) so it reads as the icon lighting up like
+ * a star. Rendered as an always-present twin behind the real icon so its
+ * opacity can transition smoothly on route change: a CSS animation and a
+ * CSS transition can't both drive the same property (`filter`) at once, so
+ * the continuous pulse (filter) and the on/off crossfade (opacity) are
+ * split across the two — letting both run simultaneously without conflict.
  */
-.nav-icon-glow {
+.nav-icon-glow-layer {
   filter: drop-shadow(0 0 4px rgb(255 244 214 / 90%)) drop-shadow(0 0 10px rgb(255 224 170 / 60%));
   animation: nav-icon-pulse 2.4s ease-in-out infinite;
+  transition: opacity 300ms ease;
 }
 
 @keyframes nav-icon-pulse {
@@ -86,13 +91,18 @@ html::-webkit-scrollbar {
 }
 
 /*
- * Active nav label, centered above the arch. Remounted (via `key`) on every
- * route change, so this fade-in replays each time — a fast-snap crossfade
- * matching EDGE_FADE_MS in ConstellationField.tsx, not a slow fade. Ends at
- * opacity 1 and stays there (`forwards`), so the label is always visible.
+ * Active nav label, centered above the arch. On route change, the outgoing
+ * label (.nav-label-exit) and incoming label (.nav-label-enter) are both
+ * mounted at once, stacked in the same spot, and crossfade together over
+ * the same 300ms window as the icon glow — one continuous motion rather
+ * than two separate instant swaps.
  */
-.nav-label {
-  animation: nav-label-fade-in 140ms ease-out forwards;
+.nav-label-enter {
+  animation: nav-label-fade-in 300ms ease forwards;
+}
+
+.nav-label-exit {
+  animation: nav-label-fade-out 300ms ease forwards;
 }
 
 @keyframes nav-label-fade-in {
@@ -101,5 +111,14 @@ html::-webkit-scrollbar {
   }
   to {
     opacity: 1;
+  }
+}
+
+@keyframes nav-label-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
   }
 }
