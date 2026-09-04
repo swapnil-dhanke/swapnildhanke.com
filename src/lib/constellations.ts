@@ -11,6 +11,8 @@ export interface ConstellationStar {
 
 export interface Constellation {
   name: string;
+  /** One-line, real-world description of where this constellation is actually found in the sky. */
+  location: string;
   stars: ConstellationStar[];
   edges: [number, number][];
 }
@@ -18,6 +20,7 @@ export interface Constellation {
 export const constellations: Constellation[] = [
   {
     name: "Orion",
+    location: "visible in both hemispheres, best seen in winter",
     stars: [
       { x: -51, y: -65 },
       { x: 44, y: -72 },
@@ -38,6 +41,7 @@ export const constellations: Constellation[] = [
   },
   {
     name: "Ursa Major",
+    location: "Northern Hemisphere, visible year-round",
     stars: [
       { x: -80, y: -58 },
       { x: -84, y: 7 },
@@ -59,6 +63,7 @@ export const constellations: Constellation[] = [
   },
   {
     name: "Cassiopeia",
+    location: "Northern Hemisphere, visible year-round",
     stars: [
       { x: -72, y: 15 },
       { x: -36, y: -65 },
@@ -75,6 +80,7 @@ export const constellations: Constellation[] = [
   },
   {
     name: "Cygnus",
+    location: "Northern Hemisphere, best seen in summer",
     stars: [
       { x: 0, y: -65 },
       { x: 0, y: 0 },
@@ -91,6 +97,7 @@ export const constellations: Constellation[] = [
   },
   {
     name: "Lyra",
+    location: "Northern Hemisphere, best seen in summer",
     stars: [
       { x: 0, y: -51 },
       { x: -32, y: -7 },
@@ -108,6 +115,7 @@ export const constellations: Constellation[] = [
   },
   {
     name: "Ursa Minor",
+    location: "Northern Hemisphere, visible year-round — home to the North Star, Polaris",
     stars: [
       { x: 65, y: -72 },
       { x: 22, y: -43 },
@@ -128,6 +136,7 @@ export const constellations: Constellation[] = [
   },
   {
     name: "Scorpius",
+    location: "Southern sky, best seen from the Southern Hemisphere in summer",
     stars: [
       { x: -72, y: -65 },
       { x: -41, y: -36 },
@@ -148,6 +157,7 @@ export const constellations: Constellation[] = [
   },
   {
     name: "Leo",
+    location: "Northern Hemisphere, best seen in spring",
     stars: [
       { x: -65, y: -43 },
       { x: -80, y: 0 },
@@ -166,6 +176,7 @@ export const constellations: Constellation[] = [
   },
   {
     name: "Gemini",
+    location: "Northern Hemisphere, best seen in winter",
     stars: [
       { x: -22, y: -65 },
       { x: 26, y: -72 },
@@ -184,6 +195,7 @@ export const constellations: Constellation[] = [
   },
   {
     name: "Aquila",
+    location: "Northern Hemisphere, best seen in summer, near the celestial equator",
     stars: [
       { x: 0, y: -61 },
       { x: 0, y: 4 },
@@ -200,6 +212,7 @@ export const constellations: Constellation[] = [
   },
   {
     name: "Perseus",
+    location: "Northern Hemisphere, best seen in autumn and winter",
     stars: [
       { x: -65, y: -22 },
       { x: -22, y: -61 },
@@ -218,6 +231,7 @@ export const constellations: Constellation[] = [
   },
   {
     name: "Andromeda",
+    location: "Northern Hemisphere, best seen in autumn",
     stars: [
       { x: -70, y: 7 },
       { x: -22, y: -17 },
@@ -234,6 +248,7 @@ export const constellations: Constellation[] = [
   },
   {
     name: "Pegasus",
+    location: "Northern Hemisphere, best seen in autumn",
     stars: [
       { x: -65, y: -58 },
       { x: 65, y: -65 },
@@ -251,6 +266,7 @@ export const constellations: Constellation[] = [
   },
   {
     name: "Sagittarius",
+    location: "Southern sky, best seen from the Southern Hemisphere in summer, toward the galactic center",
     stars: [
       { x: 0, y: -72 },
       { x: -43, y: -36 },
@@ -273,6 +289,7 @@ export const constellations: Constellation[] = [
   },
   {
     name: "Triangulum",
+    location: "Northern Hemisphere, best seen in autumn",
     stars: [
       { x: 0, y: -43 },
       { x: -41, y: 36 },
@@ -288,6 +305,7 @@ export const constellations: Constellation[] = [
   },
   {
     name: "Draco",
+    location: "Northern Hemisphere, visible year-round, winding between the two bears",
     stars: [
       { x: -20, y: -60 },
       { x: 20, y: -65 },
@@ -307,6 +325,7 @@ export const constellations: Constellation[] = [
   },
   {
     name: "Hercules",
+    location: "Northern Hemisphere, best seen in summer",
     stars: [
       { x: -50, y: -40 },
       { x: 45, y: -45 },
@@ -326,6 +345,7 @@ export const constellations: Constellation[] = [
   },
   {
     name: "Corona Borealis",
+    location: "Northern Hemisphere, best seen in summer",
     stars: [
       { x: -60, y: 10 },
       { x: -35, y: -30 },
@@ -344,6 +364,7 @@ export const constellations: Constellation[] = [
   },
   {
     name: "Auriga",
+    location: "Northern Hemisphere, best seen in winter",
     stars: [
       { x: 0, y: -70 },
       { x: 55, y: -20 },
@@ -361,6 +382,7 @@ export const constellations: Constellation[] = [
   },
   {
     name: "Taurus",
+    location: "Northern Hemisphere, best seen in winter",
     stars: [
       { x: 0, y: 0 },
       { x: -45, y: -55 },
@@ -377,6 +399,7 @@ export const constellations: Constellation[] = [
   },
   {
     name: "Canis Major",
+    location: "visible in both hemispheres, best seen in winter — home to Sirius, the brightest star",
     stars: [
       { x: 0, y: -60 },
       { x: -30, y: -10 },
@@ -396,6 +419,7 @@ export const constellations: Constellation[] = [
   },
   {
     name: "Bootes",
+    location: "Northern Hemisphere, best seen in spring and summer",
     stars: [
       { x: 0, y: -80 },
       { x: -40, y: -20 },
@@ -415,6 +439,7 @@ export const constellations: Constellation[] = [
   },
   {
     name: "Cepheus",
+    location: "Northern Hemisphere, visible year-round",
     stars: [
       { x: -45, y: 20 },
       { x: 45, y: 20 },

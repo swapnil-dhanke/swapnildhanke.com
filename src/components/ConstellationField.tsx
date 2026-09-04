@@ -11,6 +11,23 @@ const AMBIENT_STAR_COUNT = 175;
 const HOVER_RADIUS = 120;
 const REVEAL_OPACITY = 0.9;
 const LINE_WIDTH = 1;
+// Dwell reveal: continuous hover on the same constellation instance for this
+// long triggers the name/location label. Any interruption — hovering a
+// different instance, or leaving proximity entirely — resets the clock.
+const DWELL_MS = 3000;
+// Slower than EDGE_FADE_MS: the label has already been "anticipated" by the
+// 3s wait, so it eases in gently instead of snapping like the line reveal.
+const LABEL_FADE_IN_MS = 900;
+const LABEL_FADE_OUT_MS = 500;
+const LABEL_OPACITY = 1;
+// Cursor-following tooltip for the dwell label (not anchored to the
+// constellation itself) — offset down-right of the cursor, flipped to
+// whichever side keeps it inside the viewport.
+const TOOLTIP_OFFSET_X = 18;
+const TOOLTIP_OFFSET_Y = 22;
+const TOOLTIP_DOT_RADIUS = 3;
+const TOOLTIP_DOT_GAP = 8;
+const TOOLTIP_LINE_GAP = 15;
 // Each edge's own fade is fast/snappy...
 const EDGE_FADE_MS = 140;
 // ...but each successive BFS ring starts this many ms after the previous one,
@@ -18,7 +35,19 @@ const EDGE_FADE_MS = 140;
 const RING_STAGGER_MS = 70;
 
 // Guaranteed floor, checked every frame — not just replaced 1-for-1 on despawn.
-const MIN_ACTIVE_CONSTELLATIONS = 7;
+// Raised to give extra buffer for the transition window below, where an
+// exiting and its replacement are briefly both on-screen.
+const MIN_ACTIVE_CONSTELLATIONS = 9;
+// Once an exiting instance has drifted this fraction of its own extent past
+// the viewport edge (in its direction of travel), spawn its replacement
+// immediately instead of waiting for it to fully leave — so the newcomer has
+// time to drift into a visible position before the outgoing one disappears.
+const EXIT_REPLACEMENT_THRESHOLD = 0.5;
+// Minimum gap between any two spawn events (proactive replacement or floor
+// top-up). Without this, several instances spawned in the same burst tend to
+// exit in sync too, producing the visible population gaps this staggers.
+const SPAWN_STAGGER_MIN_MS = 250;
+const SPAWN_STAGGER_MAX_MS = 600;
 // Ambient self-reveal "flash", independent of hover: a single coordinated
 // sweep crosses the canvas left-to-right every 10-15s, taking 2-3s, and each
 // active constellation flashes at the moment the sweep reaches its x-position
@@ -74,6 +103,12 @@ interface ConstellationInstance {
   // BFS distances from the last reveal's origin star, reused when reversing
   // the cascade so it unwinds back through the same origin.
   lastDist: number[] | null;
+  // When continuous hover on this instance began; null whenever it isn't
+  // currently hovered (i.e. the dwell clock is reset).
+  dwellStartTime: number | null;
+  // Fade state for the name/location label, reusing the same tween shape as
+  // edgeFades but with its own (slower) durations.
+  labelFade: EdgeFade;
   // Ambient self-reveal flash, triggered by the global left-to-right sweep.
   flashHolding: boolean;
   flashHoldUntil: number;
@@ -81,6 +116,9 @@ interface ConstellationInstance {
   // with the sweep id active at spawn time, so a shape that appears mid-sweep
   // just waits for the next cycle instead of retroactively triggering.
   lastSweepId: number;
+  // Set once this instance has crossed EXIT_REPLACEMENT_THRESHOLD on its way
+  // out, so its proactive replacement is only ever spawned a single time.
+  replacementSpawned: boolean;
 }
 
 interface SweepState {
@@ -246,12 +284,52 @@ function createInstance(
     edgeFades: constellations[poolIndex].edges.map(() => createEdgeFade()),
     wasHovered: false,
     lastDist: null,
+    dwellStartTime: null,
+    labelFade: createEdgeFade(),
     flashHolding: false,
     flashHoldUntil: 0,
     // Marks it "caught up" to whatever sweep is current/most recent, so it
     // only participates starting from the next new sweep.
     lastSweepId: currentSweepId,
+    replacementSpawned: false,
   };
+}
+
+// How far along an instance is toward fully leaving the viewport, in its
+// direction of travel — 0 while still fully on-screen (or drifting inward,
+// as freshly spawned instances do), approaching 1 as it becomes fully
+// offscreen. Direction-aware (via vx/vy sign) so it never mistakes an
+// entering instance's initial edge-sliver overlap for an exit in progress.
+function computeExitProgress(instance: ConstellationInstance, width: number, height: number): number {
+  const bounds = CONSTELLATION_BOUNDS[instance.poolIndex];
+  const shapeWidth = bounds.maxX - bounds.minX || 1;
+  const shapeHeight = bounds.maxY - bounds.minY || 1;
+  const worldBounds = {
+    minX: instance.centerX + bounds.minX,
+    maxX: instance.centerX + bounds.maxX,
+    minY: instance.centerY + bounds.minY,
+    maxY: instance.centerY + bounds.maxY,
+  };
+
+  let progress = 0;
+
+  if (instance.vx < 0) {
+    const overflow = -worldBounds.minX;
+    if (overflow > 0) progress = Math.max(progress, overflow / shapeWidth);
+  } else if (instance.vx > 0) {
+    const overflow = worldBounds.maxX - width;
+    if (overflow > 0) progress = Math.max(progress, overflow / shapeWidth);
+  }
+
+  if (instance.vy < 0) {
+    const overflow = -worldBounds.minY;
+    if (overflow > 0) progress = Math.max(progress, overflow / shapeHeight);
+  } else if (instance.vy > 0) {
+    const overflow = worldBounds.maxY - height;
+    if (overflow > 0) progress = Math.max(progress, overflow / shapeHeight);
+  }
+
+  return Math.min(progress, 1);
 }
 
 // Constraint (b): never spawn into a bounding box that overlaps an
@@ -370,6 +448,9 @@ export function ConstellationField() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sizeRef = useRef({ width: 0, height: 0 });
   const mouseRef = useRef<{ x: number; y: number } | null>(null);
+  // Last known cursor position, retained after the cursor leaves the window
+  // so an in-progress label fade-out has somewhere to anchor to.
+  const lastMouseRef = useRef<{ x: number; y: number } | null>(null);
   const activeRef = useRef<ConstellationInstance[]>([]);
   const sweepRef = useRef<SweepState>({
     active: false,
@@ -380,6 +461,9 @@ export function ConstellationField() {
   });
   const lastFrameTimeRef = useRef<number | null>(null);
   const rafRef = useRef<number | undefined>(undefined);
+  // Earliest time a new spawn (proactive replacement or floor top-up) is
+  // allowed — enforces SPAWN_STAGGER_*_MS between any two spawn events.
+  const nextSpawnAllowedRef = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -498,6 +582,8 @@ export function ConstellationField() {
     const draw = (now: number) => {
       const { width, height } = sizeRef.current;
       const mouse = mouseRef.current;
+      if (mouse !== null) lastMouseRef.current = mouse;
+      const labelAnchor = mouse ?? lastMouseRef.current;
       const dt = lastFrameTimeRef.current === null ? 0 : (now - lastFrameTimeRef.current) / 1000;
       lastFrameTimeRef.current = now;
 
@@ -531,6 +617,19 @@ export function ConstellationField() {
         const instance = active[i];
         instance.centerX += instance.vx * dt;
         instance.centerY += instance.vy * dt;
+
+        if (
+          !instance.replacementSpawned &&
+          now >= nextSpawnAllowedRef.current &&
+          computeExitProgress(instance, width, height) >= EXIT_REPLACEMENT_THRESHOLD
+        ) {
+          const replacement = trySpawnFromEdge(width, height, active, sweep.sweepId);
+          if (replacement) {
+            instance.replacementSpawned = true;
+            active.push(replacement);
+            nextSpawnAllowedRef.current = now + randomRange(SPAWN_STAGGER_MIN_MS, SPAWN_STAGGER_MAX_MS);
+          }
+        }
 
         if (isFullyOffscreen(instance, width, height)) {
           active.splice(i, 1);
@@ -630,6 +729,48 @@ export function ConstellationField() {
           instance.wasHovered = isHovered;
         }
 
+        // Dwell reveal: continuous hover on this exact instance for DWELL_MS
+        // fades in its label. Hovering a different instance never touches
+        // this one's dwellStartTime (its own isHovered is false that frame),
+        // and leaving proximity entirely resets it below.
+        if (isHovered) {
+          if (instance.dwellStartTime === null) {
+            instance.dwellStartTime = now;
+          } else if (
+            now - instance.dwellStartTime >= DWELL_MS &&
+            instance.labelFade.target !== LABEL_OPACITY
+          ) {
+            instance.labelFade.target = LABEL_OPACITY;
+            instance.labelFade.fromValue = instance.labelFade.current;
+            instance.labelFade.tweenStart = null;
+            instance.labelFade.scheduledStart = now;
+            instance.labelFade.durationMs = LABEL_FADE_IN_MS;
+          }
+        } else {
+          instance.dwellStartTime = null;
+          if (instance.labelFade.target !== 0) {
+            instance.labelFade.target = 0;
+            instance.labelFade.fromValue = instance.labelFade.current;
+            instance.labelFade.tweenStart = null;
+            instance.labelFade.scheduledStart = now;
+            instance.labelFade.durationMs = LABEL_FADE_OUT_MS;
+          }
+        }
+
+        if (now >= instance.labelFade.scheduledStart) {
+          if (instance.labelFade.tweenStart === null) {
+            instance.labelFade.tweenStart = now;
+            instance.labelFade.fromValue = instance.labelFade.current;
+          }
+          const progress = Math.min(
+            (now - instance.labelFade.tweenStart) / instance.labelFade.durationMs,
+            1,
+          );
+          instance.labelFade.current =
+            instance.labelFade.fromValue +
+            (instance.labelFade.target - instance.labelFade.fromValue) * easeInOutCubic(progress);
+        }
+
         if (instance.edgeFades.length > 0) {
           ctx.lineWidth = LINE_WIDTH;
 
@@ -670,15 +811,63 @@ export function ConstellationField() {
           ctx.arc(point.x, point.y, 2.2, 0, Math.PI * 2);
           ctx.fill();
         }
+
+        if (instance.labelFade.current > 0.001 && labelAnchor !== null) {
+          const alpha = instance.labelFade.current;
+          const nameFont = "600 13px system-ui, -apple-system, sans-serif";
+          const locationFont = "11px system-ui, -apple-system, sans-serif";
+
+          ctx.font = nameFont;
+          const nameWidth = ctx.measureText(constellation.name).width;
+          ctx.font = locationFont;
+          const locationWidth = ctx.measureText(constellation.location).width;
+
+          const textWidth = Math.max(nameWidth, locationWidth);
+          const tooltipWidth = TOOLTIP_DOT_RADIUS * 2 + TOOLTIP_DOT_GAP + textWidth;
+          const tooltipHeight = TOOLTIP_LINE_GAP + 6;
+
+          // Flip to whichever side of the cursor keeps the tooltip on-screen.
+          const originX =
+            labelAnchor.x + TOOLTIP_OFFSET_X + tooltipWidth > width - 12
+              ? labelAnchor.x - TOOLTIP_OFFSET_X - tooltipWidth
+              : labelAnchor.x + TOOLTIP_OFFSET_X;
+          const originY =
+            labelAnchor.y + TOOLTIP_OFFSET_Y + tooltipHeight > height - 12
+              ? labelAnchor.y - TOOLTIP_OFFSET_Y - tooltipHeight
+              : labelAnchor.y + TOOLTIP_OFFSET_Y;
+
+          const nameY = originY + 5;
+          const dotX = originX + TOOLTIP_DOT_RADIUS;
+          const dotY = nameY - 4;
+          const textX = originX + TOOLTIP_DOT_RADIUS * 2 + TOOLTIP_DOT_GAP;
+
+          ctx.beginPath();
+          ctx.fillStyle = `rgba(168, 133, 247, ${alpha})`;
+          ctx.arc(dotX, dotY, TOOLTIP_DOT_RADIUS, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.textAlign = "left";
+          ctx.textBaseline = "alphabetic";
+
+          ctx.font = nameFont;
+          ctx.fillStyle = `rgba(255, 255, 255, ${0.92 * alpha})`;
+          ctx.fillText(constellation.name, textX, nameY);
+
+          ctx.font = locationFont;
+          ctx.fillStyle = `rgba(200, 200, 230, ${0.7 * alpha})`;
+          ctx.fillText(constellation.location, textX, nameY + TOOLTIP_LINE_GAP);
+        }
       }
 
       // Continuous floor check — not just a 1-for-1 despawn replacement.
       // If a spawn attempt can't find a non-overlapping spot, stop for this
-      // frame; it'll simply retry on the next one.
-      while (active.length < MIN_ACTIVE_CONSTELLATIONS) {
+      // frame; it'll simply retry on the next one. Also stagger-gated, so a
+      // burst of simultaneous despawns doesn't refill in one synchronized frame.
+      while (active.length < MIN_ACTIVE_CONSTELLATIONS && now >= nextSpawnAllowedRef.current) {
         const spawned = trySpawnFromEdge(width, height, active, sweep.sweepId);
         if (!spawned) break;
         active.push(spawned);
+        nextSpawnAllowedRef.current = now + randomRange(SPAWN_STAGGER_MIN_MS, SPAWN_STAGGER_MAX_MS);
       }
 
       rafRef.current = requestAnimationFrame(draw);
