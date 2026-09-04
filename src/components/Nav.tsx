@@ -34,32 +34,61 @@ const CAP_RADIUS = BAR_HEIGHT / 2;
 // box's own bottom edge instead of rendering.
 const PATH_HEIGHT = BAR_HEIGHT + ARC_DEPTH;
 
-// How far below the bar's vertical center a point at horizontal position x
-// sits, per the arch — 0 at the capped edges, ARC_DEPTH at the midpoint.
-function curveOffset(x: number): number {
-  const s = (x - BAR_WIDTH / 2) / (BAR_WIDTH / 2 - CAP_RADIUS);
-  return ARC_DEPTH * (1 - s * s);
+const ARCH_LEFT = CAP_RADIUS;
+const ARCH_RIGHT = BAR_WIDTH - CAP_RADIUS;
+const ARCH_MID_X = BAR_WIDTH / 2;
+// Distance from the center to either cap seam — the two halves are
+// symmetric, so this is the same on both sides.
+const ARCH_HALF_WIDTH = ARCH_MID_X - ARCH_LEFT;
+
+// Smoothstep: the standard cubic with value/slope 0 at t=0 and value 1/slope
+// 0 at t=1 — i.e. zero tangent at BOTH ends. Used for the arch's vertical
+// profile so it flattens out exactly where it meets the semicircular end
+// caps (whose own tangent is horizontal there too) and at the center peak,
+// instead of arriving at a slope and creating a visible kink at the seams.
+function smoothstep(t: number): number {
+  const clamped = Math.min(Math.max(t, 0), 1);
+  return clamped * clamped * (3 - 2 * clamped);
 }
 
-// A pill of constant thickness bent along the same parabola: top and bottom
-// edges are the centerline curve shifted by ±CAP_RADIUS, closed with
-// semicircular end caps. For a shallow arc this offset is visually
-// indistinguishable from a true parallel curve while staying simple to
-// compute (and to keep in exact sync with curveOffset above).
+// How far below the bar's vertical center a point at horizontal position x
+// sits, per the arch — 0 at the capped edges, ARC_DEPTH at the midpoint,
+// following the same smoothstep profile as buildArchPath's outline below.
+function curveOffset(x: number): number {
+  const t = 1 - Math.abs(x - ARCH_MID_X) / ARCH_HALF_WIDTH;
+  return ARC_DEPTH * smoothstep(t);
+}
+
+// A pill of constant thickness bent along the arch: each long edge is two
+// cubic-bezier halves forming a smoothstep hump (baseline -> peak -> back to
+// baseline), so both the seams (meeting the caps) and the center peak have
+// zero slope — no kinks anywhere. Bottom edge is the same shape, shifted
+// down by BAR_HEIGHT and bulging further down instead of up.
 function buildArchPath(): string {
-  const centerControlY = BAR_HEIGHT / 2 + 2 * ARC_DEPTH;
-  const topControlY = centerControlY - CAP_RADIUS;
-  const bottomControlY = centerControlY + CAP_RADIUS;
-  const left = CAP_RADIUS;
-  const right = BAR_WIDTH - CAP_RADIUS;
-  const midX = BAR_WIDTH / 2;
+  // Standard cubic-bezier control-point spacing (thirds of the span) for
+  // approximating a smooth curve; any interior x-spacing preserves the
+  // zero-tangent endpoints, this just gives an evenly-paced shape.
+  const leftCtrl1X = ARCH_LEFT + ARCH_HALF_WIDTH / 3;
+  const leftCtrl2X = ARCH_LEFT + (2 * ARCH_HALF_WIDTH) / 3;
+  const rightCtrl1X = ARCH_MID_X + ARCH_HALF_WIDTH / 3;
+  const rightCtrl2X = ARCH_MID_X + (2 * ARCH_HALF_WIDTH) / 3;
+
+  const topPeakY = ARC_DEPTH;
+  const bottomBaseY = BAR_HEIGHT;
+  const bottomPeakY = BAR_HEIGHT + ARC_DEPTH;
 
   return [
-    `M ${left} 0`,
-    `Q ${midX} ${topControlY} ${right} 0`,
-    `A ${CAP_RADIUS} ${CAP_RADIUS} 0 0 1 ${right} ${BAR_HEIGHT}`,
-    `Q ${midX} ${bottomControlY} ${left} ${BAR_HEIGHT}`,
-    `A ${CAP_RADIUS} ${CAP_RADIUS} 0 0 1 ${left} 0`,
+    `M ${ARCH_LEFT} 0`,
+    // top edge: baseline -> peak -> baseline
+    `C ${leftCtrl1X} 0 ${leftCtrl2X} ${topPeakY} ${ARCH_MID_X} ${topPeakY}`,
+    `C ${rightCtrl1X} ${topPeakY} ${rightCtrl2X} 0 ${ARCH_RIGHT} 0`,
+    // right cap
+    `A ${CAP_RADIUS} ${CAP_RADIUS} 0 0 1 ${ARCH_RIGHT} ${bottomBaseY}`,
+    // bottom edge (traversed right-to-left): baseline -> peak -> baseline
+    `C ${rightCtrl2X} ${bottomBaseY} ${rightCtrl1X} ${bottomPeakY} ${ARCH_MID_X} ${bottomPeakY}`,
+    `C ${leftCtrl2X} ${bottomPeakY} ${leftCtrl1X} ${bottomBaseY} ${ARCH_LEFT} ${bottomBaseY}`,
+    // left cap
+    `A ${CAP_RADIUS} ${CAP_RADIUS} 0 0 1 ${ARCH_LEFT} 0`,
     "Z",
   ].join(" ");
 }
@@ -90,7 +119,7 @@ export function Nav() {
   }
 
   return (
-    <div className="fixed top-6 left-1/2 z-50 flex -translate-x-1/2 flex-col items-center gap-2">
+    <div className="fixed top-6 left-1/2 z-50 flex -translate-x-1/2 flex-col items-center gap-0.5">
       <div className="relative h-5" style={{ width: BAR_WIDTH }}>
         {previous && (
           <span
