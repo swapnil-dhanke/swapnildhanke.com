@@ -1,10 +1,10 @@
 export const site = {
   name: "Swapnil Dhanke",
   tagline: "Welcome to my space!",
-  email: "hello@example.com",
+  email: "swappydhanke@gmail.com",
   social: {
-    github: "https://github.com/",
-    linkedin: "https://linkedin.com/",
+    github: "https://github.com/swapnil-dhanke",
+    linkedin: "https://www.linkedin.com/in/swapnil-dhanke",
     twitter: "https://twitter.com/",
   },
 };

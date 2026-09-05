@@ -1,127 +1,38 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
-import {
-  IconBrandGithub,
-  IconBrandLinkedin,
-  IconBrandX,
-  IconMail,
-} from "@tabler/icons-react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { IconBrandGithub, IconBrandLinkedin, IconFileText, IconMail, IconMaximize } from "@tabler/icons-react";
+import BlackHoleBackground from "@/components/BlackHoleBackground";
 import { site } from "@/content/site";
 
-const SOCIAL_LINKS = [
-  { href: site.social.github, label: "GitHub", Icon: IconBrandGithub },
-  { href: site.social.linkedin, label: "LinkedIn", Icon: IconBrandLinkedin },
-  { href: site.social.twitter, label: "X", Icon: IconBrandX },
+const links = [
+  [site.social.github, "GitHub", "Explore", IconBrandGithub, true],
+  [site.social.linkedin, "LinkedIn", "Connect", IconBrandLinkedin, true],
+  [`mailto:${site.email}`, "Email", "Transmit", IconMail, false],
+  ["/Swapnil-Dhanke-Resume.pdf", "Resume", "View", IconFileText, true],
 ] as const;
 
 export default function ContactPage() {
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [message, setMessage] = useState("");
-
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    const subject = `Message from ${name || "your site"}`;
-    const body = `${message}\n\n— ${name}${email ? ` (${email})` : ""}`;
-    const mailto = `mailto:${site.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-
-    window.location.href = mailto;
-  }
-
-  return (
-    <main className="flex min-h-screen w-full items-center justify-center bg-[#05050f] px-6 py-32 text-white">
-      <div className="w-full max-w-md">
-        <div className="mb-8 text-center">
-          <h1 className="text-2xl font-semibold">Get in touch</h1>
-          <p className="mt-2 text-sm text-zinc-400">
-            Send a message or find me on the links below.
-          </p>
-        </div>
-
-        <form
-          onSubmit={handleSubmit}
-          className="nav-glass flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/8 p-6"
-        >
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="name" className="text-xs font-medium text-zinc-400">
-              Name
-            </label>
-            <input
-              id="name"
-              name="name"
-              type="text"
-              required
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-white/25"
-              placeholder="Ada Lovelace"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="email" className="text-xs font-medium text-zinc-400">
-              Email
-            </label>
-            <input
-              id="email"
-              name="email"
-              type="email"
-              required
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-white/25"
-              placeholder="ada@example.com"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="message" className="text-xs font-medium text-zinc-400">
-              Message
-            </label>
-            <textarea
-              id="message"
-              name="message"
-              required
-              rows={4}
-              value={message}
-              onChange={(event) => setMessage(event.target.value)}
-              className="resize-none rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-white/25"
-              placeholder="Say hello..."
-            />
-          </div>
-
-          <button
-            type="submit"
-            className="mt-2 rounded-full border border-white/10 bg-white/10 py-2.5 text-sm font-medium text-white transition-colors hover:bg-white/20"
-          >
-            Send message
-          </button>
-        </form>
-
-        <div className="mt-6 flex items-center justify-center gap-3">
-          <a
-            href={`mailto:${site.email}`}
-            aria-label="Email"
-            className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/8 text-white transition-colors hover:bg-white/15"
-          >
-            <IconMail className="h-5 w-5" stroke={2} />
-          </a>
-          {SOCIAL_LINKS.map(({ href, label, Icon }) => (
-            <a
-              key={label}
-              href={href}
-              target="_blank"
-              rel="noreferrer"
-              aria-label={label}
-              className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/8 text-white transition-colors hover:bg-white/15"
-            >
-              <Icon className="h-5 w-5" stroke={2} />
-            </a>
-          ))}
-        </div>
-      </div>
-    </main>
-  );
+  const items = useRef<(HTMLAnchorElement | null)[]>([]);
+  const [cinema, setCinema] = useState(false);
+  const [localTime, setLocalTime] = useState("");
+  const [compose, setCompose] = useState(false);
+  const [name, setName] = useState(""); const [email, setEmail] = useState(""); const [message, setMessage] = useState("");
+  useEffect(() => {
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const motion = items.current.map(() => ({ x: 0, y: 0, vx: 0, vy: 0 })); let pointer = { x: -9999, y: -9999, active: false }, frame = 0;
+    const tick = () => { let moving = false; items.current.forEach((el, i) => { if (!el) return; const r = el.getBoundingClientRect(), dx = pointer.x - r.left - r.width / 2, dy = pointer.y - r.top - r.height / 2, distance = Math.hypot(dx, dy), p = pointer.active && distance < 125 ? Math.max(0, 1 - distance / 125) : 0, influence = p * p * (3 - 2 * p); let x = dx * influence * .075, y = dy * influence * .075; const bx = innerWidth * .62 - r.left - r.width / 2, by = innerHeight * .53 - r.top - r.height / 2, bd = Math.max(1, Math.hypot(bx, by)); x += bx / bd * influence * .45; y += by / bd * influence * .45; const magnitude = Math.hypot(x, y); if (magnitude > 9) { x *= 9 / magnitude; y *= 9 / magnitude; } const s = motion[i]; s.vx = (s.vx + (x - s.x) * .105) * .78; s.vy = (s.vy + (y - s.y) * .105) * .78; s.x += s.vx; s.y += s.vy; el.style.setProperty("--gx", `${s.x}px`); el.style.setProperty("--gy", `${s.y}px`); moving ||= Math.abs(s.x) + Math.abs(s.y) + Math.abs(s.vx) + Math.abs(s.vy) > .04; }); if (moving || pointer.active) frame = requestAnimationFrame(tick); else frame = 0; };
+    const move = (event: PointerEvent) => { pointer = { x: event.clientX, y: event.clientY, active: true }; items.current.forEach((el) => { const icon = el?.querySelector(".icon"); if (!el || !icon) return; const r = icon.getBoundingClientRect(), p = Math.max(0, 1 - Math.hypot(event.clientX-r.left-r.width/2,event.clientY-r.top-r.height/2)/150); el.style.setProperty("--proximity", String(p*p*(3-2*p))); }); if (!frame) frame = requestAnimationFrame(tick); };
+    const blur = () => { pointer.active = false; items.current.forEach((el) => el?.style.setProperty("--proximity", "0")); };
+    addEventListener("pointermove", move, { passive: true }); addEventListener("blur", blur); frame = requestAnimationFrame(tick); return () => { removeEventListener("pointermove", move); removeEventListener("blur", blur); cancelAnimationFrame(frame); };
+  }, []);
+  useEffect(() => {
+    const formatter = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Berlin", hour: "2-digit", minute: "2-digit", hour12: false, timeZoneName: "short" });
+    const updateTime = () => setLocalTime(formatter.format(new Date()));
+    updateTime();
+    const interval = window.setInterval(updateTime, 30_000);
+    return () => window.clearInterval(interval);
+  }, []);
+  function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const subject = `Message from ${name || "your site"}`, body = `${message}\n\n— ${name}${email ? ` (${email})` : ""}`; location.href = `mailto:${site.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`; }
+  return <main className="contact"><BlackHoleBackground /><button className="toggle" onClick={() => setCinema(!cinema)}><span aria-hidden="true">{cinema ? "←" : <IconMaximize size={16} stroke={1.7}/>}</span><span className="sr-only">{cinema ? "Return to Contact" : "View Black Hole"}</span></button><section className={cinema ? "ui hidden" : "ui"}><div className="panel"><div className="kicker">Into the horizon</div><h1>Stretch<br/><span>the imagination.</span></h1><p>Let&apos;s connect &amp; build something<br/>meaningful together.</p><nav>{links.map(([href,label,sub,Icon,external],i) => <a ref={(el) => { items.current[i] = el; }} className="social" key={label} href={href} target={external ? "_blank" : undefined} rel={external ? "noreferrer" : undefined} onClick={label === "Email" ? (event) => { event.preventDefault(); setCompose(true); } : undefined}><b className="icon"><Icon/></b><strong>{label}</strong><small>{sub}</small></a>)}</nav><div className="status"><i/>Based in Bayern, Germany <em/> {localTime}</div></div></section>{compose && <div className="modal" onMouseDown={() => setCompose(false)}><form onMouseDown={(e) => e.stopPropagation()} onSubmit={submit}><button className="x" type="button" onClick={() => setCompose(false)}>×</button><h2>Send a message</h2><label>Name<input required value={name} onChange={(e) => setName(e.target.value)}/></label><label>Email<input required type="email" value={email} onChange={(e) => setEmail(e.target.value)}/></label><label>Message<textarea required rows={4} value={message} onChange={(e) => setMessage(e.target.value)}/></label><button className="send">Send message</button></form></div>}<style>{`.contact + footer{z-index:1!important}.contact{min-height:100vh;overflow:hidden;background:#020106;color:#f5f7ff;font-family:Inter,ui-sans-serif,system-ui}.ui{position:fixed;inset:0;z-index:2;pointer-events:none;transition:.5s}.ui.hidden{opacity:0;visibility:hidden}.panel{position:absolute;top:50%;left:clamp(4vw,7vw,9vw);width:min(560px,43vw);transform:translateY(-50%);pointer-events:auto}.kicker{display:flex;align-items:center;gap:11px;margin-bottom:28px;font-size:10px;letter-spacing:.28em;text-transform:uppercase;color:#d8dff69e}.kicker:before{content:"";width:7px;height:7px;border-radius:50%;background:#dce8ff;box-shadow:0 0 16px #bcd6ff}.kicker:after{content:"";width:105px;height:1px;background:linear-gradient(90deg,#b1c2ff8c,transparent)}h1{margin:0;font-size:clamp(54px,5.1vw,88px);line-height:.94;letter-spacing:-.055em;font-weight:350}h1 span{background:linear-gradient(100deg,#f2f4ff 5%,#aebcff 48%,#d987cf 76%,#ff9d6b);background-clip:text;color:transparent}.panel>p{margin:28px 0 39px;font-size:14px;line-height:1.9;letter-spacing:.23em;text-transform:uppercase;color:#d3daefa3}.panel nav{display:grid;grid-template-columns:repeat(4,62px);gap:18px;margin-bottom:35px}.social{--gx:0px;--gy:0px;--proximity:0;display:flex;width:62px;flex-direction:column;align-items:center;color:inherit;text-decoration:none;transform:translate3d(var(--gx),var(--gy),0);transition:transform .18s}.social:hover{transform:translate3d(var(--gx),var(--gy),0) scale(1.04)}.icon{position:relative;display:grid;place-items:center;width:62px;height:62px;border:1px solid #beccff38;border-radius:50%;background:radial-gradient(circle at 35% 28%,#dce4ff14,#080a1440 60%);box-shadow:inset 0 0 24px #7f96ff0d,0 0 28px #5769be0d;backdrop-filter:blur(8px)}.icon:before{content:"";position:absolute;inset:-14px;border-radius:50%;opacity:calc(var(--proximity)*.82);background:radial-gradient(circle,#abc1ff38,#8296ff1c 34%,transparent 72%);filter:blur(7px)}.icon svg{width:25px;height:25px;stroke-width:1.6}.social strong{margin-top:11px;font-size:13px;font-weight:400}.social small{display:block;min-width:62px;margin-top:6px;text-align:center;white-space:nowrap;font-size:8px;letter-spacing:.26em;text-transform:uppercase;color:#bec6e06e}.status{display:flex;align-items:center;gap:13px;width:max-content;min-height:43px;padding:0 19px;border:1px solid #aebee840;border-radius:999px;background:#080b1538;backdrop-filter:blur(8px);font-size:9px;letter-spacing:.23em;text-transform:uppercase;color:#d3daefa3}.status i{width:6px;height:6px;border-radius:50%;background:#c9ff91;box-shadow:0 0 13px #c9ff91}.status em{width:1px;height:13px;background:#c6d0ec38}.toggle{position:fixed;top:24px;right:26px;z-index:3;display:grid;place-items:center;width:34px;height:34px;border:1px solid #beccff38;border-radius:50%;padding:0;background:#080b153d;color:#dce2f69e;font:400 17px/1 inherit;backdrop-filter:blur(9px);cursor:pointer;transition:border-color .2s,color .2s,background .2s}.toggle:hover{border-color:#dce2f6a6;color:#f5f7ff;background:#080b1566}.modal{position:fixed;inset:0;z-index:4;display:grid;place-items:center;background:#02010699;backdrop-filter:blur(8px)}form{position:relative;display:flex;flex-direction:column;gap:12px;width:min(440px,calc(100% - 40px));padding:28px;border:1px solid #beccff57;border-radius:22px;background:#080a14d9}form h2{margin:0 0 8px;font-weight:400}label{display:flex;flex-direction:column;gap:5px;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#d3daefa3}input,textarea{border:1px solid #beccff38;border-radius:8px;padding:10px;background:#fff1;color:white;font:14px inherit}.send{margin-top:5px;border:1px solid #beccff57;border-radius:999px;padding:12px;background:#aebee826;color:white;cursor:pointer}.x{position:absolute;top:8px;right:14px;border:0;background:none;color:white;font-size:28px;cursor:pointer}@media(max-width:680px){.contact{overflow:auto}.panel{position:relative;top:auto;left:auto;width:auto;margin:0 22px;padding:100px 0 42px;transform:none}h1{font-size:clamp(45px,13vw,66px)}.panel nav{grid-template-columns:repeat(2,1fr);gap:24px 8px}.toggle{top:18px;right:18px}}`}</style></main>;
 }
